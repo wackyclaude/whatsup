@@ -74,7 +74,8 @@ async function fakeNetwork(input, init = {}) {
         ['Waarom vallen de bladeren in de herfst?', 95], ['Nieuwe pinguïns in Wildlands Emmen', 200], ['Zo werkt de herfstvakantie', 400]]
       : [['Scientists find a new species of glowing mushroom', 60], ['Two people killed in storm', 70],
         ['How do hedgehogs get ready for winter?', 180], ['School wins award for its vegetable garden', 300]];
-    const items = titles.map(([t, m]) => `<item><title><![CDATA[${t}]]></title><pubDate>${ago(m)}</pubDate></item>`).join('');
+    const site = nl ? 'https://jeugdjournaal.nl/artikel/' : 'https://www.bbc.co.uk/newsround/articles/';
+    const items = titles.map(([t, m], i) => `<item><title><![CDATA[${t}]]></title><link>${site}${i + 1}</link><pubDate>${ago(m)}</pubDate></item>`).join('');
     return new Response(`<?xml version="1.0"?><rss version="2.0"><channel>${items}</channel></rss>`, { headers: { 'Content-Type': 'application/rss+xml' } });
   }
   if (url.hostname === 'api.open-meteo.com') {
@@ -177,7 +178,8 @@ async function selftest(baseEnv) {
   const news = await r.json();
   const headlines = (news.items || []).map((i) => i.title).join(' | ');
   check(results, 'kids news: both sources, filtered',
-    news.enabled && news.items.length === 7 && news.items.some((i) => i.lang === 'EN') && !/Bomaanslag|killed/.test(headlines), headlines);
+    news.enabled && news.items.length === 7 && news.items.some((i) => i.lang === 'EN') && !/Bomaanslag|killed/.test(headlines)
+    && news.items.every((i) => /^https:\/\/(jeugdjournaal\.nl|www\.bbc\.co\.uk)\//.test(i.link)), headlines);
   r = await get('/manifest.webmanifest');
   check(results, 'app manifest served', r.status === 200 && (await r.json()).short_name === 'Whatsup', r.status);
 

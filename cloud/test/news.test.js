@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRss, isKidSafe, fetchNews, SOURCES } from '../src/news.js';
+import { parseRss, isKidSafe, fetchNews, safeLink, SOURCES } from '../src/news.js';
 import { loadConfig } from '../src/config.js';
 import { getNews, _resetNewsCache } from '../src/data.js';
 import worker from '../src/index.js';
@@ -13,12 +13,12 @@ const NOS = `<?xml version="1.0" encoding="UTF-8"?>
 <enclosure url="https://images.cdn.nos.nl/x.webp" type="image/webp"/>
 <pubDate>Thu, 22 Oct 2026 18:59:40 +0200</pubDate></item>
 <item><title><![CDATA[Bomaanslag in de stad]]></title><pubDate>Thu, 22 Oct 2026 17:00:00 +0200</pubDate></item>
-<item><title>Vaders oefenen haren vlechten: &#39;Wel lastig&#39; &amp; leuk</title><pubDate>Thu, 22 Oct 2026 16:36:42 +0200</pubDate></item>
+<item><title>Vaders oefenen haren vlechten: &#39;Wel lastig&#39; &amp; leuk</title><link>https://evil.example/jeugdjournaal.nl</link><pubDate>Thu, 22 Oct 2026 16:36:42 +0200</pubDate></item>
 <item><title><![CDATA[Zo groeien bomen in de herfst <script>alert(1)</script>]]></title><pubDate>Thu, 22 Oct 2026 15:00:00 +0200</pubDate></item>
 </channel></rss>`;
 
 const BBC = `<rss><channel>
-<item><title>Why do leaves change colour in autumn?</title><pubDate>Thu, 22 Oct 2026 12:00:00 GMT</pubDate></item>
+<item><title>Why do leaves change colour in autumn?</title><link>https://www.bbc.co.uk/newsround/articles/abc123</link><pubDate>Thu, 22 Oct 2026 12:00:00 GMT</pubDate></item>
 <item><title>Two people killed in storm</title><pubDate>Thu, 22 Oct 2026 11:00:00 GMT</pubDate></item>
 <item><title>Lioness gives birth to three cubs at zoo</title><pubDate>Thu, 22 Oct 2026 10:00:00 GMT</pubDate></item>
 </channel></rss>`;
@@ -59,7 +59,11 @@ test('fetchNews: only known feeds, filtered, takes turns between sources, surviv
   assert.ok(!titles.some((t) => /Bomaanslag|killed/.test(t)));
   assert.equal(res.items.filter((i) => i.lang === 'EN').length, 2);
   assert.equal(res.items.filter((i) => i.lang === 'NL').length, 3);
-  assert.ok(res.items.every((i) => !('link' in i)), 'no links passed to the page');
+  const link = (t) => res.items.find((i) => i.title.startsWith(t)).link;
+  assert.equal(link('Kinderen'), 'https://jeugdjournaal.nl/artikel/1');
+  assert.equal(link('Why do leaves'), 'https://www.bbc.co.uk/newsround/articles/abc123');
+  assert.equal(link('Vaders'), null, 'link to another website dropped');
+  assert.equal(link('Lioness'), null, 'no link in the feed');
 
   const dead = await fetchNews(cfg.news, async (url) => (url.includes('bbc') ? new Response('', { status: 503 }) : new Response(NOS)));
   assert.deepEqual(dead.errors, ['BBC Newsround: unavailable']);
@@ -103,4 +107,14 @@ test('email check: fast on long input, normal addresses accepted', () => {
   const r = loadConfig(JSON.stringify({ allowed_emails: [`a@${'.'.repeat(50000)}`, `a@b${'.c'.repeat(30000)}!`, 'Mum.Dad+home@gmail.com', 'x@school.example.nl'] }));
   assert.ok(Date.now() - t0 < 500, 'no slow regex');
   assert.deepEqual(r.config.allowed_emails, ['mum.dad+home@gmail.com', 'x@school.example.nl']);
+});
+
+test('article links: only https on the source website', () => {
+  const nos = SOURCES['nos-jeugdjournaal'].sites;
+  assert.equal(safeLink('https://jeugdjournaal.nl/artikel/2#top', nos), 'https://jeugdjournaal.nl/artikel/2');
+  assert.equal(safeLink('https://nos.nl/jeugdjournaal/artikel/3', nos), 'https://nos.nl/jeugdjournaal/artikel/3');
+  for (const bad of ['http://jeugdjournaal.nl/a', 'javascript:alert(1)', 'https://jeugdjournaal.nl.evil.com/a',
+    'https://evilnos.nl/a', 'https://user@jeugdjournaal.nl/a', 'https://jeugdjournaal.nl:8443/a', '', 'not a url']) {
+    assert.equal(safeLink(bad, nos), null, bad);
+  }
 });

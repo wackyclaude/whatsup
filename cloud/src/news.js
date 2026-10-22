@@ -1,14 +1,36 @@
 // Kids' news headlines for the dashboard.
 //
 // Only children's news services are used, from a fixed list (nobody can
-// point the app at another feed). Only headlines are shown: no photos, no
-// links to click. On top of that, headlines with words about violence,
-// death, crime and similar are left out.
+// point the app at another feed). Only headlines are shown (no photos);
+// each links to the article on that service's own website. Headlines with
+// words about violence, death, crime and similar are left out.
 
 export const SOURCES = {
-  'nos-jeugdjournaal': { name: 'NOS Jeugdjournaal', lang: 'NL', url: 'https://feeds.nos.nl/jeugdjournaal' },
-  'bbc-newsround': { name: 'BBC Newsround', lang: 'EN', url: 'https://feeds.bbci.co.uk/newsround/rss.xml' },
+  'nos-jeugdjournaal': {
+    name: 'NOS Jeugdjournaal', lang: 'NL', url: 'https://feeds.nos.nl/jeugdjournaal', sites: ['jeugdjournaal.nl', 'nos.nl'],
+  },
+  'bbc-newsround': {
+    name: 'BBC Newsround', lang: 'EN', url: 'https://feeds.bbci.co.uk/newsround/rss.xml', sites: ['bbc.co.uk', 'bbc.com'],
+  },
 };
+
+/**
+ * The article address, only if it is https on the source's own website
+ * (so a feed can't send the family somewhere else). Otherwise null.
+ */
+export function safeLink(raw, sites) {
+  let u;
+  try {
+    u = new URL(String(raw || '').trim());
+  } catch (e) {
+    return null;
+  }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port) return null;
+  const host = u.hostname.toLowerCase();
+  if (!sites.some((site) => host === site || host.endsWith(`.${site}`))) return null;
+  u.hash = '';
+  return u.href.length <= 300 ? u.href : null;
+}
 export const DEFAULT_SOURCES = ['nos-jeugdjournaal', 'bbc-newsround'];
 
 // Matched as whole words (English) or word parts (Dutch compounds).
@@ -80,7 +102,8 @@ export function parseRss(xml) {
     const block = xml.slice(start, end + 7);
     const title = textOf(block, 'title');
     const date = new Date(textOf(block, 'pubDate'));
-    if (title) items.push({ title: title.slice(0, 140), published: Number.isNaN(date.getTime()) ? null : date.toISOString() });
+    const link = textOf(block, 'link') || textOf(block, 'guid');
+    if (title) items.push({ title: title.slice(0, 140), link, published: Number.isNaN(date.getTime()) ? null : date.toISOString() });
   }
   return items;
 }
@@ -120,7 +143,7 @@ export async function fetchNews(newsConfig, fetchImpl = fetch, limit = 9) {
     try {
       const items = (await fetchFeed(src, fetchImpl))
         .filter((i) => isKidSafe(i.title, newsConfig.block_words))
-        .map((i) => ({ ...i, source: src.name, lang: src.lang }));
+        .map((i) => ({ ...i, link: safeLink(i.link, src.sites), source: src.name, lang: src.lang }));
       return items;
     } catch (e) {
       errors.push(`${src.name}: unavailable`);

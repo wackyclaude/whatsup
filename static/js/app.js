@@ -11,9 +11,28 @@ const DATA_REFRESH_MS = 2 * 60 * 1000;
 const SKY_REFRESH_MS = 5 * 60 * 1000;
 const NEWS_REFRESH_MS = 30 * 60 * 1000;
 
-const state = { settings: null, data: null, camIndex: 0, camRendered: null, dayKey: null, festivals: null, festivalsDay: null };
+const state = { sideCollapsed: readPref('whatsup-side-collapsed') === '1', settings: null, data: null, camIndex: 0, camRendered: null, dayKey: null, festivals: null, festivalsDay: null };
 
 const $ = (id) => document.getElementById(id);
+
+// Small per-device choices (like the hidden side column). Browser storage can
+// be missing or blocked; the dashboard works the same without it.
+function readPref(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+function writePref(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) { /* not saved, that's fine */ }
+}
+
+function setupSideToggle() {
+  const set = (collapsed) => {
+    state.sideCollapsed = collapsed;
+    writePref('whatsup-side-collapsed', collapsed ? '1' : '0');
+    fitStage();
+  };
+  $('side-close').addEventListener('click', () => set(true));
+  $('side-open').addEventListener('click', () => set(false));
+}
 const isCloud = () => !!(state.settings && state.settings.mode === 'cloud');
 const hm = (d) => (d ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—');
 const shortDay = (d) => d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' });
@@ -50,7 +69,9 @@ const WIDE_MIN_W = 1736; // narrowest stage that has room for the side column
 function fitStage() {
   const stage = $('stage');
   const aspect = window.innerWidth / Math.max(1, window.innerHeight);
-  const wide = aspect >= 1.7;
+  const wideScreen = aspect >= 1.7;
+  const wide = wideScreen && !state.sideCollapsed;
+  $('side-open').hidden = !(wideScreen && state.sideCollapsed);
   const w = wide ? Math.max(WIDE_MIN_W, Math.round(aspect * BASE_H)) : BASE_W;
   stage.classList.toggle('wide', wide);
   stage.style.width = `${w}px`;
@@ -602,14 +623,23 @@ function renderNews() {
     const li = el('li', 'news-item');
     const meta = el('div', 'news-meta');
     meta.append(el('span', item.lang === 'EN' ? 'chip en' : 'chip', item.lang), el('span', '', `${item.source} · ${timeAgo(item.published, now)}`));
-    li.append(el('div', 'news-title', item.title), meta);
+    let title;
+    if (item.link && /^https:\/\//.test(item.link)) {
+      title = el('a', 'news-title', item.title);
+      title.href = item.link;
+      title.target = '_blank';
+      title.rel = 'noopener noreferrer';
+    } else {
+      title = el('div', 'news-title', item.title);
+    }
+    li.append(title, meta);
     list.append(li);
   }
   if (!news.items.length) list.append(el('li', 'empty', 'No headlines right now.'));
   $('news-updated').textContent = news.updated ? `updated ${hm(new Date(news.updated))}` : '';
   $('news-foot').textContent = news.errors && news.errors.length
     ? `Not reachable just now: ${news.errors.map((x) => x.replace(/: unavailable$/, '')).join(', ')}`
-    : 'Headlines from children’s news services, checked every 30 minutes.';
+    : 'From children’s news services, checked every 30 minutes. Click a headline to read it.';
 }
 
 async function loadNews() {
@@ -683,6 +713,7 @@ async function loadData() {
 
 async function start() {
   if (MODE === 'screensaver') document.body.classList.add('screensaver');
+  setupSideToggle();
   fitStage();
   window.addEventListener('resize', fitStage);
 

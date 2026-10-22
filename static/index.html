@@ -15,6 +15,7 @@
 <script type="module" src="/js/app.js"></script>
 </head>
 <body>
+<button id="side-open" class="side-open" type="button" hidden aria-label="Show tonight's sky and kids' news"><span class="arrow" aria-hidden="true">›</span>Sky &amp; news</button>
 <div id="stage" class="stage">
 
   <!-- Side column: only on wide screens (see fitStage in js/app.js) -->
@@ -22,7 +23,10 @@
     <section class="card card-night" aria-labelledby="night-h">
       <div class="card-head">
         <h2 id="night-h" class="label c-lavender">Tonight's sky</h2>
-        <span id="night-when" class="note"></span>
+        <span class="head-right">
+          <span id="night-when" class="note"></span>
+          <button id="side-close" class="side-toggle" type="button" title="Hide tonight's sky and kids' news" aria-label="Hide tonight's sky and kids' news">‹ Hide</button>
+        </span>
       </div>
       <ul id="night-list" class="night-list"></ul>
       <div id="night-extra" class="night-extra"></div>

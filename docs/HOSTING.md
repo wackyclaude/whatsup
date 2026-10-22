@@ -139,7 +139,8 @@ In Cloudflare: your Worker → **Settings → Variables and Secrets → Add**:
 - **Events you mark Private** in Google always show as "Busy".
 - **Cameras:** open a live stream you trust on YouTube. The ID is the 11 characters after `v=` in the address. A camera with an empty ID is hidden.
 - **Wide screens** (wider than 16:10, e.g. a 16:9 monitor or TV) get an extra column on the left: *Tonight's sky* and *Kids' news*. The 16:10 MacBook screen keeps the normal layout.
-  - Kids' news shows headlines only (no photos, no links) from NOS Jeugdjournaal and BBC Newsround, with a word filter on top. It updates every 30 minutes.
+  - Kids' news shows headlines (no photos) from NOS Jeugdjournaal and BBC Newsround, with a word filter on top. It updates every 30 minutes. Clicking a headline opens the article on that service's website in a new tab.
+  - **Hide** at the top of the column folds it away; the **Sky & news** tab on the left edge brings it back. Each device remembers its choice.
   - Only one source: `"news": { "sources": ["nos-jeugdjournaal"] }` (or `"bbc-newsround"`).
   - Hide more headlines: `"news": { "block_words": ["voetbal"] }`.
   - Turn it off: `"news": false`.
