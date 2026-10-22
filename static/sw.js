@@ -6,7 +6,7 @@
 const CACHE = 'whatsup-shell-v3';
 const SHELL = [
   '/styles.css', '/js/app.js', '/js/sky.js', '/vendor/suncalc.js', '/vendor/astronomy.js',
-  '/manifest.webmanifest', '/icons/icon-192.png', '/icons/favicon-32.png', '/img/moon.png',
+  '/manifest.webmanifest', '/icons/icon-192.png', '/icons/favicon-32.png', '/img/moon.webp',
 ];
 
 self.addEventListener('install', (event) => {
