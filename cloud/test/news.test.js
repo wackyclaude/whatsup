@@ -89,3 +89,18 @@ test('getNews caches for 30 minutes; /api/news needs sign-in', async () => {
   });
   assert.equal(res.status, 401);
 });
+
+test('odd feeds stay fast and safe', () => {
+  const t0 = Date.now();
+  parseRss('<item '.repeat(200000));
+  parseRss(`<item><title>${'<'.repeat(15000)}</title></item>`.repeat(50));
+  assert.ok(Date.now() - t0 < 1000, 'linear time');
+  assert.deepEqual(parseRss('<ITEM><TITLE>Hoofdletters</TITLE></ITEM>').map((i) => i.title), ['Hoofdletters']);
+});
+
+test('email check: fast on long input, normal addresses accepted', () => {
+  const t0 = Date.now();
+  const r = loadConfig(JSON.stringify({ allowed_emails: [`a@${'.'.repeat(50000)}`, `a@b${'.c'.repeat(30000)}!`, 'Mum.Dad+home@gmail.com', 'x@school.example.nl'] }));
+  assert.ok(Date.now() - t0 < 500, 'no slow regex');
+  assert.deepEqual(r.config.allowed_emails, ['mum.dad+home@gmail.com', 'x@school.example.nl']);
+});

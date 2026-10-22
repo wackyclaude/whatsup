@@ -165,6 +165,7 @@ class HttpTests(unittest.TestCase):
         whatsup.Handler.store = store
         whatsup.Handler.settings = whatsup.public_settings(cfg)
         whatsup.Handler.allowed_hosts = {"127.0.0.1:%d" % port, "localhost:%d" % port}
+        whatsup.Handler.static_files = whatsup.static_index(whatsup.STATIC_DIR)
         cls.base = "http://127.0.0.1:%d" % port
         threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
 
@@ -199,9 +200,16 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(status, 403)
 
     def test_no_path_traversal(self):
-        for p in ("/../server/whatsup.py", "/%2e%2e/server/whatsup.py", "/static/../../server/whatsup.py"):
+        for p in ("/../server/whatsup.py", "/%2e%2e/server/whatsup.py", "/static/../../server/whatsup.py",
+                  "/js/../../server/whatsup.py", "//etc/passwd", "/js/app.js%0d%0aX-Evil:%201"):
             status, _, _ = self.get(p)
             self.assertEqual(status, 404, p)
+
+    def test_static_files_with_types(self):
+        index = whatsup.static_index(whatsup.STATIC_DIR)
+        self.assertEqual(index["/js/app.js"][1], "application/javascript; charset=utf-8")
+        self.assertIn("/img/moon.webp", index)
+        self.assertTrue(all("\r" not in t and "\n" not in t for _, t in index.values()))
 
 
 if __name__ == "__main__":

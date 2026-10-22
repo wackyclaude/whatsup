@@ -16,6 +16,8 @@ import { loadConfig } from '../src/config.js';
 import { _resetDataCache } from '../src/data.js';
 import worker from '../src/index.js';
 
+const REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
+
 const SECRET = 'test-secret-test-secret-test-secret-1234';
 const CLIENT_ID = 'client-123.apps.googleusercontent.com';
 const b64url = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
@@ -163,7 +165,7 @@ test('fetchCalendars merges calendars, splits today/tomorrow, reports unknown ca
   assert.deepEqual(res.today.map((e) => e.title), ['Birthday', 'Swimming', 'Dinner']);
   assert.deepEqual(res.tomorrow.map((e) => e.title), ['School trip']);
   assert.deepEqual(res.errors, ['Missing: not found in your Google account (check the calendar ID)']);
-  assert.ok(!JSON.stringify(res).includes('group.calendar.google.com'), 'calendar IDs never reach the page');
+  assert.doesNotMatch(JSON.stringify(res), /group\.calendar\.google\.com/, 'calendar IDs never reach the page');
   await assert.rejects(fetchCalendars(config, 'bad-token', new Date(), fetchImpl), CalendarAuthError);
 });
 
@@ -369,7 +371,7 @@ test('worker: full Google sign-in, dashboard, data, and sign-out', async () => {
   res = await withFetch(googleMock({ calls }), () => worker.fetch(new Request(`${ORIGIN}/logout`, { method: 'POST', headers: { ...headers, Origin: ORIGIN } }), ENV));
   assert.equal(res.status, 200);
   assert.match(res.headers.get('Set-Cookie'), /__Host-whatsup=; .*Max-Age=0/);
-  assert.ok(!calls.includes('https://oauth2.googleapis.com/revoke'), 'sign-out is per device: other devices stay signed in');
+  assert.ok(!calls.some((u) => u === REVOKE_URL), 'sign-out is per device: other devices stay signed in');
 });
 
 test('worker: Google rejecting a cached token gets one fresh token; a revoked grant signs you out', async () => {
@@ -415,7 +417,7 @@ test('worker: accounts not on the list are turned away and their access revoked'
   const cb = await signIn('stranger@gmail.com', calls);
   assert.equal(cb.headers.get('Location'), '/?error=not_allowed');
   assert.equal(cookiesFrom(cb)[SESSION_COOKIE], undefined);
-  assert.ok(calls.includes('https://oauth2.googleapis.com/revoke'));
+  assert.ok(calls.some((u) => u === REVOKE_URL));
 });
 
 test('worker: callback without matching state or cookie is refused', async () => {

@@ -587,6 +587,7 @@ class Handler(BaseHTTPRequestHandler):
     store: DataStore = None  # type: ignore
     settings: Dict[str, Any] = {}
     allowed_hosts: set = set()
+    static_files: Dict[str, Any] = {}
 
     def log_message(self, fmt: str, *args: Any) -> None:  # quieter logs
         log.debug("%s - %s", self.address_string(), fmt % args)
@@ -631,24 +632,34 @@ class Handler(BaseHTTPRequestHandler):
         self._static(path, head_only)
 
     def _static(self, path: str, head_only: bool) -> None:
-        rel = path.lstrip("/")
-        if not re.match(r"^[A-Za-z0-9_\-./]+$", rel) or ".." in rel:
+        # Only files listed when the server started can be served: the
+        # requested path is looked up in that list and never used to build
+        # a file path, so "../" tricks can't reach anything else.
+        entry = self.static_files.get(path)
+        if entry is None:
             self._send(404, b"Not found", "text/plain; charset=utf-8", head_only)
             return
-        target = (STATIC_DIR / rel).resolve()
-        try:
-            target.relative_to(STATIC_DIR.resolve())
-        except ValueError:
-            self._send(404, b"Not found", "text/plain; charset=utf-8", head_only)
-            return
-        if not target.is_file():
-            self._send(404, b"Not found", "text/plain; charset=utf-8", head_only)
-            return
-        ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+        target, ctype = entry
+        self._send(200, target.read_bytes(), ctype, head_only)
+
+
+def static_index(root: Path) -> Dict[str, Any]:
+    """Maps "/js/app.js" -> (file, content type) for every file in static/."""
+    mimetypes.add_type("application/javascript", ".js")
+    mimetypes.add_type("application/manifest+json", ".webmanifest")
+    root = root.resolve()
+    index: Dict[str, Any] = {}
+    for f in sorted(root.rglob("*")):
+        if not f.is_file() or f.is_symlink():
+            continue
+        rel = f.relative_to(root).as_posix()
+        if not re.match(r"^[A-Za-z0-9_\-./]+$", rel) or rel.startswith(".") or "/." in rel:
+            continue
+        ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype in ("application/javascript", "image/svg+xml"):
             ctype += "; charset=utf-8"
-        body = target.read_bytes()
-        self._send(200, body, ctype, head_only)
+        index["/" + rel] = (f, ctype)
+    return index
 
 
 def serve(cfg: Dict[str, Any], cache_path: Path, demo: bool) -> None:
@@ -657,8 +668,7 @@ def serve(cfg: Dict[str, Any], cache_path: Path, demo: bool) -> None:
     Handler.store = store
     Handler.settings = public_settings(cfg)
     Handler.allowed_hosts = {"127.0.0.1:%d" % port, "localhost:%d" % port}
-    mimetypes.add_type("application/javascript", ".js")
-    mimetypes.add_type("application/manifest+json", ".webmanifest")
+    Handler.static_files = static_index(STATIC_DIR)
 
     if not demo:
         threading.Thread(target=store.run_forever, name="refresher", daemon=True).start()

@@ -50,7 +50,8 @@ export function loadConfig(raw) {
   const allowed = [];
   (Array.isArray(input.allowed_emails) ? input.allowed_emails : []).forEach((e) => {
     const v = String(e || '').trim().toLowerCase();
-    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) allowed.push(v);
+    // length cap + an unambiguous pattern: checking stays fast on any input
+    if (v.length <= 254 && /^[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+$/.test(v)) allowed.push(v);
     else problems.push(`allowed_emails has an invalid address: "${String(e).slice(0, 60)}"`);
   });
   if (!allowed.length && !problems.some((p) => p.startsWith('WHATSUP_CONFIG'))) {

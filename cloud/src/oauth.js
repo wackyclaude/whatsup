@@ -6,7 +6,8 @@
 export const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 export const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 export const REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
-export const SCOPES = ['openid', 'email', 'https://www.googleapis.com/auth/calendar.readonly'];
+const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+export const SCOPES = ['openid', 'email', CALENDAR_SCOPE];
 const ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
 
 export class SignInError extends Error {
@@ -57,8 +58,8 @@ export async function exchangeCode({ code, codeVerifier, clientId, clientSecret,
   });
   if (!res.ok) throw new SignInError('failed', `token exchange HTTP ${res.status}`);
   const body = await res.json();
-  const granted = String(body.scope || '').split(' ');
-  if (!granted.includes('https://www.googleapis.com/auth/calendar.readonly')) {
+  const granted = new Set(String(body.scope || '').split(' '));
+  if (!granted.has(CALENDAR_SCOPE)) {
     throw new SignInError('no_calendar', 'calendar permission not granted');
   }
   if (!body.refresh_token) throw new SignInError('failed', 'no refresh token');

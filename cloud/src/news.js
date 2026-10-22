@@ -41,22 +41,45 @@ function decode(s) {
 }
 
 function textOf(block, tag) {
-  const m = block.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, 'i'));
-  if (!m) return '';
-  let v = m[1].trim();
-  const cdata = v.match(/^<!\[CDATA\[([\s\S]*?)\]\]>$/);
-  v = cdata ? cdata[1] : decode(v);
-  return v.replace(/<[^>]*>/g, ' ').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+  // indexOf scanning (no backtracking regex), so odd input can't slow it down
+  const lower = block.toLowerCase();
+  const open = `<${tag.toLowerCase()}`;
+  let at = lower.indexOf(open);
+  while (at >= 0 && !/[\s>]/.test(lower[at + open.length] || '')) at = lower.indexOf(open, at + 1);
+  if (at < 0) return '';
+  const gt = lower.indexOf('>', at);
+  const close = lower.indexOf(`</${tag.toLowerCase()}>`, gt);
+  if (gt < 0 || close < 0) return '';
+  let v = block.slice(gt + 1, close).trim();
+  if (v.startsWith('<![CDATA[') && v.endsWith(']]>')) v = v.slice(9, -3);
+  else v = decode(v);
+  return v
+    .replace(/<[^<>]*>/g, ' ') // tags
+    .replace(/[<>]/g, ' ') // stray brackets
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-/** Parses RSS 2.0 items: [{ title, published }] (plain text only). */
+/**
+ * Parses RSS 2.0 items: [{ title, published }] (plain text only).
+ * Scans with indexOf rather than one big regex, so the work stays linear
+ * however odd the feed is; very long items are skipped.
+ */
 export function parseRss(xml) {
   const items = [];
-  const re = /<item[\s>][\s\S]*?<\/item>/gi;
-  let m;
-  while ((m = re.exec(xml)) && items.length < 60) {
-    const title = textOf(m[0], 'title');
-    const date = new Date(textOf(m[0], 'pubDate'));
+  const lower = String(xml).toLowerCase();
+  let pos = 0;
+  while (items.length < 60) {
+    const start = lower.indexOf('<item', pos);
+    if (start < 0) break;
+    const end = lower.indexOf('</item>', start);
+    if (end < 0) break;
+    pos = end + 7;
+    if (end - start > 20000) continue;
+    const block = xml.slice(start, end + 7);
+    const title = textOf(block, 'title');
+    const date = new Date(textOf(block, 'pubDate'));
     if (title) items.push({ title: title.slice(0, 140), published: Number.isNaN(date.getTime()) ? null : date.toISOString() });
   }
   return items;
