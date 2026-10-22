@@ -156,7 +156,7 @@ async function selftest(baseEnv) {
   check(results, 'app manifest served', r.status === 200 && (await r.json()).short_name === 'Whatsup', r.status);
 
   r = await worker.fetch(new Request(`${base}/logout`, { method: 'POST', headers: { ...auth, Origin: base } }), env);
-  check(results, 'sign-out clears cookie and revokes', r.status === 200 && /Max-Age=0/.test(r.headers.get('Set-Cookie')) && calls.revoke === 1, calls);
+  check(results, 'sign-out clears this device only', r.status === 200 && /Max-Age=0/.test(r.headers.get('Set-Cookie')) && calls.revoke === 0, calls);
   return { ok: results.every((x) => x.ok), results, calls };
 }
 

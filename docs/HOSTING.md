@@ -20,7 +20,7 @@ This turns Whatsup into a normal website that you can open on **any computer or 
 - **Who can get in:** only Google accounts on **your list** (`allowed_emails`). Anyone else is turned away, and their Google permission is revoked straight away.
 - **What it can do:** read your calendars and your email address. It **can't change** anything, and it can't see your Gmail, Drive or photos.
 - **Staying signed in:** each browser stays signed in for 6 months in an encrypted cookie. The page's own code can't read it.
-  - **Sign out** in the app ends it and removes the app's access in your Google account.
+  - **Sign out** in the app signs out that one device only. Your other devices stay signed in.
 - **Your settings** (your list of accounts, calendar IDs, location, cameras) are stored as **encrypted secrets in Cloudflare**, not in the public GitHub repo.
 
 ---
@@ -61,11 +61,13 @@ If you open it now, it shows a sign-in page saying setup isn't finished. That's 
    - **Create.** Copy the **Client ID** and the **Client secret** now. Google shows the secret only once.
 7. **Publish it, so you don't get signed out every week:** Google Auth Platform → **Audience** → **Publish app** → Confirm.
    - While an app is in *Testing*, Google ends its sign-ins after 7 days.
-   - Published is fine for a personal app. Google doesn't need to review it for a family this size.
+   - Published is fine for a personal app. Unreviewed ("unverified") apps can have up to 100 users, plenty for a family.
 
 > When you sign in, Google will say **"Google hasn't verified this app"**. That's normal for a
 > personal app you made yourself. Click **Advanced → Go to Whatsup Family Dashboard**.
 > Google then lists exactly what the app asks for: your calendars (read-only) and your email address.
+>
+> Teach the family this is OK **only** on your own `…workers.dev` address. Anywhere else, that warning is a reason to stop.
 
 ---
 
@@ -158,8 +160,9 @@ For a wall-display feel, open the app and press **Control-Command-F** for full s
 | Add a person who can sign in | Add their Gmail to `allowed_emails` in `WHATSUP_CONFIG` → Deploy |
 | Remove a person | Remove them from `allowed_emails` → Deploy. They're signed out everywhere on their next page load |
 | Change calendars, location, cameras | Edit `WHATSUP_CONFIG` → Deploy |
-| Sign everyone out at once | Change `SESSION_SECRET` to a new random value → Deploy |
 | Sign one device out | **Sign out** (top right of the dashboard) |
+| Sign everyone out at once | Change `SESSION_SECRET` to a new random value → Deploy |
+| Lost a device / remove the app's access completely | <https://myaccount.google.com/permissions> → Whatsup → remove access (signs that account out everywhere) |
 | Update to the latest version | Nothing. Cloudflare redeploys automatically when the repo changes |
 | See errors | Cloudflare → Worker → **Logs** |
 
@@ -182,6 +185,7 @@ For a wall-display feel, open the app and press **Control-Command-F** for full s
 Cloudflare redeploys whatever is pushed to the repo's `main` branch.
 - Turn on **two-factor authentication** for your GitHub account.
 - Don't give others write access to the repo.
+- In Cloudflare: Worker → **Settings → Build** → turn **off** builds for non-production branches.
 
 ## Costs
 

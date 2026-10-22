@@ -321,7 +321,45 @@ test('worker: full Google sign-in, dashboard, data, and sign-out', async () => {
   res = await withFetch(googleMock({ calls }), () => worker.fetch(new Request(`${ORIGIN}/logout`, { method: 'POST', headers: { ...headers, Origin: ORIGIN } }), ENV));
   assert.equal(res.status, 200);
   assert.match(res.headers.get('Set-Cookie'), /__Host-whatsup=; .*Max-Age=0/);
-  assert.ok(calls.includes('https://oauth2.googleapis.com/revoke'), 'Google access revoked on sign-out');
+  assert.ok(!calls.includes('https://oauth2.googleapis.com/revoke'), 'sign-out is per device: other devices stay signed in');
+});
+
+test('worker: Google rejecting a cached token gets one fresh token; a revoked grant signs you out', async () => {
+  _resetDataCache();
+  _resetOAuthCache();
+  // 1) cached token stale but grant fine → recovers with a fresh token
+  let rejectOnce = true;
+  const calls = [];
+  const flaky = async (url, init = {}) => {
+    calls.push(String(url));
+    if (url === 'https://oauth2.googleapis.com/token') return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }));
+    if (String(url).startsWith('https://www.googleapis.com/calendar/v3/')) {
+      if (rejectOnce) { rejectOnce = false; return new Response('{}', { status: 401 }); }
+      return new Response(JSON.stringify({ items: [] }));
+    }
+    return new Response('down', { status: 503 });
+  };
+  const good = await seal(SECRET, 'session', { email: 'parent@gmail.com', rt: 'rt-ok', exp: nowSec() + 3600 });
+  let res = await withFetch(flaky, () => worker.fetch(new Request(`${ORIGIN}/api/data`, { headers: { Cookie: `${SESSION_COOKIE}=${good}` } }), ENV));
+  assert.equal(res.status, 200);
+  assert.equal(calls.filter((u) => u.endsWith('/token')).length, 2);
+
+  // 2) Calendar API keeps rejecting and the grant is revoked → 401 + cookie cleared (not a 500)
+  _resetDataCache();
+  _resetOAuthCache();
+  const revoked = async (url, init = {}) => {
+    if (url === 'https://oauth2.googleapis.com/token') {
+      const first = !revoked.done; revoked.done = true;
+      return first ? new Response(JSON.stringify({ access_token: 'old', expires_in: 3600 }))
+        : new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 });
+    }
+    if (String(url).startsWith('https://www.googleapis.com/calendar/v3/')) return new Response('{}', { status: 401 });
+    return new Response('down', { status: 503 });
+  };
+  res = await withFetch(revoked, () => worker.fetch(new Request(`${ORIGIN}/api/data`, { headers: { Cookie: `${SESSION_COOKIE}=${good}` } }), ENV));
+  assert.equal(res.status, 401);
+  assert.equal((await res.json()).reason, 'expired');
+  assert.match(res.headers.get('Set-Cookie'), /Max-Age=0/);
 });
 
 test('worker: accounts not on the list are turned away and their access revoked', async () => {

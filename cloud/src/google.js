@@ -91,7 +91,12 @@ export function eventToItem(ev, cal, timeZone) {
   };
 }
 
-export class CalendarAuthError extends Error {}
+export class CalendarAuthError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'CalendarAuthError';
+  }
+}
 
 export async function fetchCalendars(config, token, now, fetchImpl = fetch) {
   const tz = config.location.timezone;

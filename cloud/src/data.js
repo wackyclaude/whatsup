@@ -2,7 +2,7 @@
 import { loadConfig } from './config.js';
 import { fetchCalendars, dayKeyIn, CalendarAuthError } from './google.js';
 import { fetchWeather } from './weather.js';
-import { accessTokenFor, SignInError } from './oauth.js';
+import { accessTokenFor, dropAccessToken, SignInError } from './oauth.js';
 
 export const VERSION = '2.0.0';
 
@@ -43,7 +43,16 @@ export async function getData(env, session, now = new Date(), fetchImpl = fetch)
       .then((e) => { weatherEntry = e; return e; }),
     refresh(calendarEntries.get(session.email), config.refresh_minutes.calendar, now, day, async () => {
       const token = await accessTokenFor(session.rt, creds, fetchImpl, now.getTime());
-      return fetchCalendars(config, token, now, fetchImpl);
+      try {
+        return await fetchCalendars(config, token, now, fetchImpl);
+      } catch (e) {
+        if (!(e instanceof CalendarAuthError)) throw e;
+        // Google rejected the cached access token: get a fresh one once.
+        // If the sign-in itself was revoked, this throws SignInError('expired').
+        dropAccessToken(session.rt);
+        const fresh = await accessTokenFor(session.rt, creds, fetchImpl, now.getTime());
+        return fetchCalendars(config, fresh, now, fetchImpl);
+      }
     }).then((e) => {
       if (calendarEntries.size > 20) calendarEntries.clear();
       calendarEntries.set(session.email, e);

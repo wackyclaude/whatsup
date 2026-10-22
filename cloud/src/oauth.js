@@ -101,6 +101,11 @@ export async function accessTokenFor(refreshToken, { clientId, clientSecret }, f
   return body.access_token;
 }
 
+/** Forget a cached access token (e.g. Google rejected it). */
+export function dropAccessToken(refreshToken) {
+  accessCache.delete(refreshToken);
+}
+
 export function rememberAccessToken(refreshToken, token, expiresIn, nowMs = Date.now()) {
   accessCache.set(refreshToken, { token, expiresAt: nowMs + expiresIn * 1000 });
 }

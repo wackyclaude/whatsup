@@ -3,7 +3,7 @@
 //  /                 the dashboard if you're signed in, otherwise the sign-in page
 //  /login            starts "Sign in with Google"
 //  /auth/callback    Google sends you back here
-//  /logout  (POST)   signs out and revokes the app's Google access
+//  /logout  (POST)   signs this device out
 //  /api/settings     page settings (signed in only)
 //  /api/data         calendar + weather (signed in only)
 //
@@ -11,6 +11,7 @@
 
 import { loadConfig, publicSettings } from './config.js';
 import { getData, forgetUser, VERSION } from './data.js';
+import { CalendarAuthError } from './google.js';
 import {
   buildAuthUrl, exchangeCode, rememberAccessToken, revoke, SignInError,
 } from './oauth.js';
@@ -140,15 +141,15 @@ async function handleCallback(request, env, url, config) {
   return redirect('/', [clearOauth, cookie(SESSION_COOKIE, session, SESSION_DAYS * 86400)]);
 }
 
+// Signs out THIS device only (clears its cookie). Google's revoke would end
+// the app's access on every device signed in with that account, so that's
+// left to myaccount.google.com/permissions (see docs/HOSTING.md).
 async function handleLogout(request, env, url, config) {
   // Only accept sign-out from our own page (stops other sites signing you out)
   const origin = request.headers.get('Origin');
   if (origin !== url.origin) return text('Forbidden', 403);
   const session = await currentSession(request, env, config);
-  if (session) {
-    forgetUser(session.email);
-    await revoke(session.rt);
-  }
+  if (session) forgetUser(session.email);
   const res = json({ ok: true });
   res.headers.append('Set-Cookie', clearCookie(SESSION_COOKIE));
   return res;
@@ -191,7 +192,7 @@ export default {
       try {
         return json(await getData(env, session));
       } catch (e) {
-        if (e instanceof SignInError || e.name === 'CalendarAuthError') {
+        if (e instanceof SignInError || e instanceof CalendarAuthError) {
           forgetUser(session.email);
           return json({ signin: true, reason: 'expired' }, 401, { 'Set-Cookie': clearCookie(SESSION_COOKIE) });
         }
