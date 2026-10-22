@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+# private settings never belong in git
+config/config.json
+*.local.json

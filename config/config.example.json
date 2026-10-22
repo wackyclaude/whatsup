@@ -1,0 +1,38 @@
+{
+  "_read_me": "Copy of this file lives at ~/Library/Application Support/whatsup/config.json. Keep it private: it holds your secret calendar addresses. Keys starting with _ are notes and are ignored.",
+
+  "port": 8765,
+
+  "location": {
+    "name": "Groningen",
+    "latitude": 53.2194,
+    "longitude": 6.5665,
+    "timezone": "Europe/Amsterdam"
+  },
+
+  "refresh_minutes": { "calendar": 15, "weather": 30 },
+
+  "_calendars_help": "One entry per family calendar. ics_url = Google Calendar > Settings > (calendar) > Integrate calendar > 'Secret address in iCal format'. show_details=false shows every event as 'Busy'. Events marked Private in Google always show as 'Busy'.",
+  "calendars": [
+    {
+      "name": "Family",
+      "ics_url": "PASTE-SECRET-ICAL-ADDRESS-HERE",
+      "color": "#6AA9FF",
+      "show_details": true
+    }
+  ],
+
+  "_panchang_help": "month_system: 'purnimanta' (North India) or 'amanta' (South & West India).",
+  "panchang": { "month_system": "purnimanta" },
+
+  "_cameras_help": "Only these streams can ever play. Use either youtube_video_id (the 11 characters after v= in the link) or youtube_channel_id (starts with UC). Leave both empty to hide a camera.",
+  "cameras": [
+    { "name": "Golden Temple", "place": "Amritsar", "timezone": "Asia/Kolkata", "youtube_video_id": "", "youtube_channel_id": "" },
+    { "name": "Ganga, Rishikesh", "place": "Rishikesh", "timezone": "Asia/Kolkata", "youtube_video_id": "", "youtube_channel_id": "" },
+    { "name": "Varanasi ghats", "place": "Varanasi", "timezone": "Asia/Kolkata", "youtube_video_id": "", "youtube_channel_id": "" },
+    { "name": "Marine Drive", "place": "Mumbai", "timezone": "Asia/Kolkata", "youtube_video_id": "", "youtube_channel_id": "" }
+  ],
+
+  "_rotate_help": "In screensaver mode, switch to the next camera every N minutes (0 = always show the first one).",
+  "camera_rotate_minutes": 10
+}

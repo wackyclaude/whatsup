@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Whatsup · Family Dashboard</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="styles.css">
+<script type="module" src="js/app.js"></script>
+</head>
+<body>
+<div id="stage" class="stage">
+
+  <header class="top">
+    <div class="top-left">
+      <div id="clock" class="clock">--:--</div>
+      <div class="date-block">
+        <div id="date" class="date">&nbsp;</div>
+        <div class="pills">
+          <span id="pill-place" class="pill pill-blue"></span>
+          <span id="pill-tithi" class="pill pill-saffron"></span>
+          <span id="pill-festival" class="pill pill-green" hidden></span>
+        </div>
+      </div>
+    </div>
+    <div class="top-right">
+      <span id="demo-badge" class="badge-demo" hidden>Demo data</span>
+      <span id="status" class="status"></span>
+    </div>
+  </header>
+
+  <main class="row-top">
+    <!-- Calendar -->
+    <section class="card card-cal tall" aria-labelledby="cal-h">
+      <div class="card-head">
+        <h2 id="cal-h" class="label c-blue">Calendar · Today</h2>
+        <div id="cal-allday" class="allday"></div>
+      </div>
+      <ol id="cal-list" class="events"></ol>
+      <div id="cal-empty" class="empty" hidden>Nothing planned today</div>
+      <div id="cal-foot" class="card-foot"></div>
+    </section>
+
+    <!-- Sun & Moon -->
+    <div class="col">
+      <section class="card card-sun grow" aria-labelledby="sun-h">
+        <h2 id="sun-h" class="label c-amber">Sun &amp; Moon · Today</h2>
+        <div class="two">
+          <div class="stack">
+            <div class="sub c-amber"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>Sun</div>
+            <div class="kv">Rise <b id="sun-rise">--:--</b></div>
+            <div class="kv">Set <b id="sun-set">--:--</b></div>
+            <div class="note" id="sun-daylight"></div>
+            <div class="note" id="sun-golden"></div>
+          </div>
+          <div class="stack">
+            <div class="sub c-lavender"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>Moon</div>
+            <div class="kv">Rise <b id="moon-rise">--:--</b></div>
+            <div class="kv">Set <b id="moon-set">--:--</b></div>
+            <div class="note" id="moon-evening"></div>
+            <div class="note" id="moon-rashi"></div>
+          </div>
+        </div>
+        <div class="moon-row">
+          <svg id="moon-svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Moon phase">
+            <circle cx="32" cy="32" r="28" class="moon-dark"/>
+            <path id="moon-lit" class="moon-lit" d=""/>
+          </svg>
+          <div class="stack tight">
+            <div id="moon-phase" class="moon-phase"></div>
+            <div id="moon-full" class="note"></div>
+            <div id="moon-new" class="note"></div>
+          </div>
+        </div>
+      </section>
+      <section class="card card-sun-soft" aria-labelledby="sky2-h">
+        <div class="grid-sky head">
+          <h2 id="sky2-h" class="label c-amber">Next 2 days</h2>
+          <span class="c-amber">SUN ↑</span><span class="c-amber">SUN ↓</span>
+          <span class="c-lavender">MOON ↑</span><span class="c-lavender">MOON ↓</span>
+        </div>
+        <div id="sky-days"></div>
+        <div id="clock-change" class="card-foot c-amber strong"></div>
+      </section>
+    </div>
+
+    <!-- Panchang -->
+    <div class="col">
+      <section class="card card-saffron grow" aria-labelledby="pan-h">
+        <div class="card-head">
+          <h2 id="pan-h" class="label c-saffron">Panchang · Today</h2>
+          <div id="pan-system" class="tiny"></div>
+        </div>
+        <div class="tithi-row">
+          <div id="pan-tithi" class="tithi">&nbsp;</div>
+          <div id="pan-tag" class="tag-saffron" hidden></div>
+        </div>
+        <div id="pan-paksha" class="paksha"></div>
+        <dl id="pan-grid" class="kvgrid"></dl>
+      </section>
+      <section class="card card-saffron-soft" aria-labelledby="pan2-h">
+        <h2 id="pan2-h" class="label c-saffron">Next 2 days</h2>
+        <div id="pan-days"></div>
+        <div id="pan-coming" class="card-foot"></div>
+      </section>
+    </div>
+  </main>
+
+  <div class="row-bottom">
+    <!-- Hourly weather -->
+    <section class="card card-teal" aria-labelledby="wx-h">
+      <div class="wx-head">
+        <div class="wx-title">
+          <h2 id="wx-h" class="label c-teal">Weather · Hour by hour</h2>
+          <span class="hilo">High <b id="wx-high" class="c-amber">--°</b></span>
+          <span class="hilo">Low <b id="wx-low" class="c-rain-light">--°</b></span>
+        </div>
+        <div class="legend">
+          <span class="c-amber"><i class="sw-line"></i>Temperature °C</span>
+          <span class="c-rain"><i class="sw-box"></i>Rain chance</span>
+          <span class="c-soft">↗ Wind km/h</span>
+        </div>
+      </div>
+      <div id="wx-grid" class="wx-grid"></div>
+      <div id="wx-next" class="wx-next"></div>
+    </section>
+
+    <!-- Camera -->
+    <section class="cam" aria-label="Live camera from India">
+      <div id="cam-frame" class="cam-frame"></div>
+      <div id="cam-empty" class="cam-empty" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="M15.5 10.5l6-3.5v10l-6-3.5z"/></svg>
+        <div>Add a camera: scripts/configure.sh add-camera</div>
+      </div>
+      <div class="cam-top">
+        <div class="cam-title">
+          <span id="cam-live" class="live" hidden><i></i>LIVE</span>
+          <span id="cam-name" class="glass"></span>
+        </div>
+        <span id="cam-time" class="glass"></span>
+      </div>
+      <div id="cam-buttons" class="cam-buttons"></div>
+    </section>
+  </div>
+</div>
+</body>
+</html>
