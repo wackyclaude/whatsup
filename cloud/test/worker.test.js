@@ -298,7 +298,7 @@ function googleMock({ email = 'parent@gmail.com', calls = [] } = {}) {
     }
     if (url === 'https://oauth2.googleapis.com/revoke') return new Response('');
     if (String(url).startsWith('https://www.googleapis.com/calendar/v3/')) {
-      return new Response(JSON.stringify({ items: [{ id: '1', summary: 'Swimming', start: { dateTime: new Date(Date.now() + 3600e3).toISOString() }, end: { dateTime: new Date(Date.now() + 7200e3).toISOString() } }] }));
+      return new Response(JSON.stringify({ items: [{ id: '1', summary: 'Swimming', start: { dateTime: new Date(Date.now() - 1800e3).toISOString() }, end: { dateTime: new Date(Date.now() + 1800e3).toISOString() } }] }));
     }
     if (String(url).startsWith('https://api.open-meteo.com/')) return new Response('down', { status: 503 });
     throw new Error(`unexpected fetch ${url}`);
