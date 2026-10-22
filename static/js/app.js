@@ -208,7 +208,7 @@ function allFestivals() {
   const today = dayKey(new Date());
   if (state.festivalsDay !== today) {
     try {
-      const calc = festivalsBetween(addDays(new Date(), -2), addDays(new Date(), 60));
+      const calc = festivalsBetween(addDays(new Date(), -2), addDays(new Date(), 100));
       state.festivals = mergeFestivals(calc, listed);
     } catch (e) {
       state.festivals = listed;
@@ -254,6 +254,8 @@ function renderPanchang(now, lat, lon) {
     grid.appendChild(el('dd', hl ? 'hl' : null, v));
   }
 
+  renderNow(now, lat, lon, system, p);
+
   const days = clear($('pan-days'));
   for (let i = 1; i <= 2; i++) {
     const day = addDays(now, i);
@@ -270,13 +272,25 @@ function renderPanchang(now, lat, lon) {
     days.appendChild(row);
   }
 
-  // Next festivals after the 2-day window, within 45 days
+  // Countdown to the next festival (from tomorrow on)
+  const todayKey = dayKey(now);
+  const upcoming = allFestivals().filter((f) => f.date > todayKey).sort((a, b) => a.date.localeCompare(b.date));
+  const nextFest = upcoming[0];
+  $('countdown').hidden = !nextFest;
+  if (nextFest) {
+    const d = new Date(nextFest.date + 'T12:00:00');
+    const days = Math.round((d - new Date(todayKey + 'T12:00:00')) / 86400000);
+    $('cd-num').textContent = String(days);
+    $('cd-unit').textContent = days === 1 ? 'day to go' : 'days to go';
+    $('cd-name').textContent = nextFest.name;
+    $('cd-date').textContent = longDay(d);
+  }
+
+  // The festivals after that one, within 45 days
   const coming = clear($('pan-coming'));
-  const from = dayKey(addDays(now, 3));
   const until = dayKey(addDays(now, 45));
-  const next = allFestivals()
-    .filter((f) => f.date >= from && f.date <= until)
-    .sort((a, b) => a.date.localeCompare(b.date))
+  const next = upcoming
+    .filter((f) => f !== nextFest && f.date <= until && (!nextFest || f.date >= nextFest.date))
     .slice(0, 2);
   if (next.length) {
     coming.append('Coming up: ');
@@ -285,6 +299,43 @@ function renderPanchang(now, lat, lon) {
       const d = new Date(f.date + 'T12:00:00');
       coming.appendChild(el('b', null, `${f.name} · ${shortDay(d)}`));
     });
+  }
+}
+
+// "Right now": the tithi in force at this moment (it can differ from the
+// sunrise tithi shown on the left), when it changes, and on Ekadashi the
+// window to break the fast the next morning.
+function renderNow(now, lat, lon, system, todayPanchang) {
+  const when = (d) => (dayKey(d) === dayKey(now) ? hm(d) : `${d.toLocaleDateString('en-GB', { weekday: 'short' })} ${hm(d)}`);
+  const t = Sky.tithiNow(now);
+  $('dial-num').textContent = String((t.index % 15) + 1);
+  $('dial-sub').textContent = t.paksha.toUpperCase();
+  $('dial-arc').setAttribute('stroke-dasharray', `${(t.progress * 100).toFixed(1)} 100`);
+  $('dial').setAttribute('aria-label', `${t.name}, ${Math.round(t.progress * 100)}% through, until ${when(t.end)}`);
+  $('now-name').textContent = t.name;
+  const until = clear($('now-until'));
+  until.append('until ');
+  until.appendChild(el('b', null, when(t.end)));
+  until.append(` · then ${t.next}`);
+  const n = Sky.nakshatraNow(now);
+  const nak = clear($('now-nak'));
+  nak.appendChild(el('b', null, n.name));
+  nak.append(` till ${when(n.end)}`);
+
+  // Parana: shown on Ekadashi, and on the morning after until the window closes
+  let parana = null;
+  if (todayPanchang.ekadashi) parana = Sky.paranaWindow(now, lat, lon);
+  else {
+    const y = Sky.panchang(addDays(now, -1), lat, lon, system);
+    if (y.ekadashi) {
+      const w = Sky.paranaWindow(addDays(now, -1), lat, lon);
+      if (w && w.end && now < w.end) parana = w;
+    }
+  }
+  $('parana').hidden = !(parana && parana.end);
+  if (parana && parana.end) {
+    const dayLabel = dayKey(parana.start) === dayKey(now) ? 'Today' : parana.start.toLocaleDateString('en-GB', { weekday: 'short' });
+    $('parana-t').textContent = `${dayLabel} ${hm(parana.start)}–${hm(parana.end)}`;
   }
 }
 

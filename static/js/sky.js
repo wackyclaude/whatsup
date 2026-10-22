@@ -221,3 +221,69 @@ export function upcomingClockChange(now, days = 3) {
   }
   return null;
 }
+
+// ---------------------------------------------------------------- "right now"
+
+const tithiName = (idx) => (idx === 14 ? 'Purnima' : idx === 29 ? 'Amavasya' : TITHI_NAMES[idx % 15]);
+
+/**
+ * The tithi in force at `now`: its name, when it started and ends, how far
+ * through it we are (0–1), and which tithi comes next.
+ */
+export function tithiNow(now) {
+  const elong = Astronomy.MoonPhase(now);
+  const idx = Math.floor(elong / 12);
+  const start = Astronomy.SearchMoonPhase(idx * 12, new Date(now.getTime() - 3 * DAY_MS), 4).date;
+  const end = Astronomy.SearchMoonPhase(((idx + 1) * 12) % 360, now, 3).date;
+  const progress = Math.min(1, Math.max(0, (now - start) / (end - start)));
+  const nextIdx = (idx + 1) % 30;
+  return {
+    index: idx,
+    name: tithiName(idx),
+    paksha: idx < 15 ? 'Shukla' : 'Krishna',
+    start,
+    end,
+    progress,
+    next: tithiName(nextIdx),
+    nextPaksha: nextIdx < 15 ? 'Shukla' : 'Krishna',
+  };
+}
+
+/** The nakshatra in force at `now` and when it ends. */
+export function nakshatraNow(now) {
+  const span = 360 / 27;
+  const idx = Math.floor(siderealMoon(now) / span);
+  // The moon moves ~13° a day, so the boundary is under ~30 h away: bisect.
+  let lo = now.getTime();
+  let hi = lo + 32 * 3600000;
+  const past = (ms) => Math.floor(siderealMoon(new Date(ms)) / span) !== idx;
+  for (let i = 0; i < 30; i++) {
+    const mid = (lo + hi) / 2;
+    if (past(mid)) hi = mid; else lo = mid;
+  }
+  return { name: NAKSHATRAS[idx], end: new Date(hi), next: NAKSHATRAS[(idx + 1) % 27] };
+}
+
+/**
+ * Ekadashi fast-breaking (parana) window on the morning after `ekadashiDay`:
+ * after sunrise and after the first quarter of Dwadashi (Hari Vasara), within
+ * the morning (first fifth of daylight), and before Dwadashi ends.
+ */
+export function paranaWindow(ekadashiDay, lat, lon) {
+  const nextDay = addDays(ekadashiDay, 1);
+  const sun = sunTimes(nextDay, lat, lon);
+  if (!sun.rise || !sun.set) return null;
+  const sunrise = sun.rise;
+  // Dwadashi = tithi 11 or 26; find it around the next morning
+  const ref = Astronomy.MoonPhase(sunrise);
+  const idx = Math.floor(ref / 12);
+  const dwadashi = idx === 10 || idx === 25 ? idx + 1 : idx; // still Ekadashi at sunrise → next one
+  const dStart = Astronomy.SearchMoonPhase(dwadashi * 12, new Date(sunrise.getTime() - 2 * DAY_MS), 3).date;
+  const dEnd = Astronomy.SearchMoonPhase(((dwadashi + 1) * 12) % 360, dStart, 3).date;
+  const hariVasaraEnd = new Date(dStart.getTime() + (dEnd - dStart) / 4);
+  const morningEnd = new Date(sunrise.getTime() + (sun.set - sunrise) / 5);
+  const start = new Date(Math.max(sunrise, hariVasaraEnd));
+  let end = new Date(Math.min(dEnd, morningEnd));
+  if (end <= start) end = new Date(Math.min(dEnd, start.getTime() + 2 * 3600000)); // short Dwadashi: as soon as allowed
+  return { start, end: end > start ? end : null, day: nextDay };
+}

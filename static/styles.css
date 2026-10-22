@@ -240,3 +240,36 @@ html:has(body.doc-body), body.doc-body { overflow: auto; height: auto; }
 .doc a { color: #9CC8F2; }
 .doc-small { font-size: 13px; color: var(--muted); }
 .doc-links { margin-top: 28px; font-weight: 600; }
+
+/* ---------- panchang: "right now" dial ---------- */
+.pan-split { display: grid; grid-template-columns: minmax(0, 1fr) 168px; gap: 14px; min-height: 0; }
+.pan-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pan-now { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px;
+  border-left: 1px solid rgba(255,159,67,0.25); padding-left: 14px; }
+.now-label { font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.dial { width: 86px; height: 86px; margin: 0; }
+.dial-track { fill: none; stroke: rgba(255,159,67,0.18); stroke-width: 9; }
+.dial-arc { fill: none; stroke: var(--saffron); stroke-width: 9; stroke-linecap: round; transition: stroke-dasharray 0.6s ease; }
+.dial-num { fill: var(--saffron-light); font-size: 34px; font-weight: 800; font-family: inherit; }
+.dial-sub { fill: var(--muted); font-size: 11px; font-weight: 700; font-family: inherit; letter-spacing: 0.04em; }
+.now-name { font-size: 14px; font-weight: 800; color: var(--text); }
+.now-line { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+.now-line b { color: var(--text); font-weight: 700; }
+.parana { margin-top: 4px; padding: 4px 8px; border-radius: 10px; background: rgba(255,159,67,0.14); border: 1px solid rgba(255,159,67,0.35); }
+.parana-h { font-size: 10px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--saffron); }
+.parana-t { font-size: 13px; font-weight: 800; color: var(--saffron-light); }
+
+/* ---------- next 2 days: festival countdown ---------- */
+.next-split { display: grid; grid-template-columns: minmax(0, 1fr) 132px; gap: 14px; }
+.next-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.countdown { display: flex; flex-direction: column; align-items: center; text-align: center; justify-content: center;
+  border-left: 1px solid rgba(255,159,67,0.25); padding-left: 12px; }
+.diya { width: 38px; height: 38px; }
+.cd-top { display: flex; align-items: center; gap: 4px; }
+.diya-flame { transform-origin: 32px 30px; animation: flicker 2.6s ease-in-out infinite; }
+@keyframes flicker { 0%, 100% { transform: scale(1, 1) rotate(0deg); } 30% { transform: scale(0.94, 1.06) rotate(-2deg); } 60% { transform: scale(1.04, 0.95) rotate(2deg); } }
+@media (prefers-reduced-motion: reduce) { .diya-flame { animation: none; } }
+.cd-num { font-size: 30px; font-weight: 800; line-height: 1; color: var(--saffron-light); margin-top: 6px; }
+.cd-unit { font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.cd-name { font-size: 13px; font-weight: 800; color: var(--text); margin-top: 2px; line-height: 1.2; }
+.cd-date { font-size: 11px; color: var(--muted); }

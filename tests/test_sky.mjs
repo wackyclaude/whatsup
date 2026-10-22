@@ -77,3 +77,17 @@ assert.ok(Sky.moonLitPath(0.84, true, 32, 32, 28).startsWith('M 32 4'));
 assert.equal(Sky.moonLitPath(0.001, true, 32, 32, 28), '');
 
 console.log('sky tests passed');
+
+// "Right now" tithi, nakshatra change and Ekadashi parana window (22–23 Oct 2026)
+const tn = Sky.tithiNow(new Date('2026-10-22T09:30:00+02:00'));
+assert.equal(tn.name, 'Ekadashi');
+assert.equal(tn.next, 'Dwadashi');
+assert.equal(hm(tn.end), '11:19');
+assert.ok(tn.progress > 0.9 && tn.progress < 1);
+const nk = Sky.nakshatraNow(new Date('2026-10-22T09:30:00+02:00'));
+assert.equal(nk.name, 'Shatabhisha');
+assert.equal(nk.next, 'Purva Bhadrapada');
+const pw = Sky.paranaWindow(new Date(2026, 9, 22, 12), LAT, LON);
+assert.equal(`${hm(pw.start)}–${hm(pw.end)}`, '08:14–10:16');
+assert.equal(pw.start.getDate(), 23);
+console.log('right-now tests passed');

@@ -108,16 +108,59 @@
           <h2 id="pan-h" class="label c-saffron">Panchang · Today</h2>
           <div id="pan-system" class="tiny"></div>
         </div>
-        <div class="tithi-row">
-          <div id="pan-tithi" class="tithi">&nbsp;</div>
-          <div id="pan-tag" class="tag-saffron" hidden></div>
+        <div class="pan-split">
+          <div class="pan-main">
+            <div class="tithi-row">
+              <div id="pan-tithi" class="tithi">&nbsp;</div>
+              <div id="pan-tag" class="tag-saffron" hidden></div>
+            </div>
+            <div id="pan-paksha" class="paksha"></div>
+            <dl id="pan-grid" class="kvgrid"></dl>
+          </div>
+          <div class="pan-now" aria-labelledby="now-h">
+            <div id="now-h" class="now-label">Right now</div>
+            <svg class="dial" viewBox="0 0 120 120" role="img" id="dial" aria-label="Tithi progress">
+              <circle cx="60" cy="60" r="50" class="dial-track"/>
+              <circle cx="60" cy="60" r="50" class="dial-arc" id="dial-arc" pathLength="100" stroke-dasharray="0 100" transform="rotate(-90 60 60)"/>
+              <text x="60" y="58" text-anchor="middle" class="dial-num" id="dial-num"></text>
+              <text x="60" y="78" text-anchor="middle" class="dial-sub" id="dial-sub"></text>
+            </svg>
+            <div class="now-name" id="now-name"></div>
+            <div class="now-line" id="now-until"></div>
+            <div class="now-line" id="now-nak"></div>
+            <div class="parana" id="parana" hidden>
+              <div class="parana-h">Break fast (parana)</div>
+              <div class="parana-t" id="parana-t"></div>
+            </div>
+          </div>
         </div>
-        <div id="pan-paksha" class="paksha"></div>
-        <dl id="pan-grid" class="kvgrid"></dl>
       </section>
       <section class="card card-saffron-soft" aria-labelledby="pan2-h">
-        <h2 id="pan2-h" class="label c-saffron">Next 2 days</h2>
-        <div id="pan-days"></div>
+        <div class="next-split">
+          <div class="next-main">
+            <h2 id="pan2-h" class="label c-saffron">Next 2 days</h2>
+            <div id="pan-days"></div>
+          </div>
+          <div class="countdown" id="countdown" hidden>
+            <div class="cd-top">
+              <svg class="diya" viewBox="0 0 64 64" aria-hidden="true">
+                <defs>
+                  <radialGradient id="diya-glow"><stop offset="0" stop-color="#FFD27A" stop-opacity="0.55"/><stop offset="1" stop-color="#FFD27A" stop-opacity="0"/></radialGradient>
+                  <linearGradient id="diya-flame" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#FF7A1A"/><stop offset="0.55" stop-color="#FFC24B"/><stop offset="1" stop-color="#FFF4C9"/></linearGradient>
+                </defs>
+                <circle cx="32" cy="24" r="20" fill="url(#diya-glow)"/>
+                <path class="diya-flame" d="M32 10 C 37 18, 38 24, 32 30 C 26 24, 27 18, 32 10 Z" fill="url(#diya-flame)"/>
+                <path d="M10 34 Q 32 30 54 34 Q 50 50 32 52 Q 14 50 10 34 Z" fill="#E8833A"/>
+                <path d="M10 34 Q 32 30 54 34 Q 32 39 10 34 Z" fill="#FFB25E"/>
+                <path d="M16 44 Q 32 48 48 44" stroke="#FFD28A" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+              </svg>
+              <div class="cd-num" id="cd-num"></div>
+            </div>
+            <div class="cd-unit" id="cd-unit"></div>
+            <div class="cd-name" id="cd-name"></div>
+            <div class="cd-date" id="cd-date"></div>
+          </div>
+        </div>
         <div id="pan-coming" class="card-foot"></div>
       </section>
     </div>
