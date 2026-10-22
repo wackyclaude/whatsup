@@ -98,6 +98,46 @@ export class CalendarAuthError extends Error {
   }
 }
 
+const PALETTE = ['#6AA9FF', '#5ED39A', '#FF9F43', '#FF7A90', '#B9A7FF', '#4FD1C5'];
+const HEX = /^#[0-9A-Fa-f]{6}$/;
+const MAX_AUTO_CALENDARS = 15;
+
+const matches = (list, cal) => list.includes(String(cal.name).toLowerCase()) || list.includes(String(cal.calendar_id).toLowerCase());
+
+/**
+ * Every calendar that's ticked (shown) in the person's Google Calendar,
+ * minus any listed in hide_calendars. Uses Google's own colours and names.
+ */
+export async function listVisibleCalendars(config, token, fetchImpl = fetch) {
+  const qs = new URLSearchParams({
+    minAccessRole: 'reader',
+    maxResults: '250',
+    fields: 'items(id,summary,summaryOverride,backgroundColor,selected,hidden,primary)',
+  });
+  const res = await fetchImpl(`https://www.googleapis.com/calendar/v3/users/me/calendarList?${qs}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) throw new CalendarAuthError('token rejected');
+  if (!res.ok) throw new Error(`calendar list HTTP ${res.status}`);
+  const body = await res.json();
+  const cals = [];
+  for (const c of body.items || []) {
+    if (!c.selected || c.hidden) continue;
+    const cal = {
+      name: String(c.primary ? 'My calendar' : (c.summaryOverride || c.summary || 'Calendar')).slice(0, 40),
+      calendar_id: c.id,
+      color: HEX.test(String(c.backgroundColor)) ? c.backgroundColor : PALETTE[cals.length % PALETTE.length],
+      show_details: true,
+      primary: !!c.primary,
+    };
+    if (matches(config.hide_calendars, cal)) continue;
+    if (matches(config.busy_calendars, cal)) cal.show_details = false;
+    cals.push(cal);
+  }
+  cals.sort((a, b) => (a.primary === b.primary ? 0 : a.primary ? -1 : 1));
+  return cals.slice(0, MAX_AUTO_CALENDARS);
+}
+
 export async function fetchCalendars(config, token, now, fetchImpl = fetch) {
   const tz = config.location.timezone;
   const today = dayKeyIn(now, tz);
@@ -109,7 +149,7 @@ export async function fetchCalendars(config, token, now, fetchImpl = fetch) {
   await Promise.all(config.calendars.map(async (cal) => {
     const qs = new URLSearchParams({
       timeMin, timeMax, singleEvents: 'true', orderBy: 'startTime', maxResults: '100', timeZone: tz,
-      fields: 'items(id,status,summary,start,end,visibility,eventType)',
+      fields: 'items(id,iCalUID,status,summary,start,end,visibility,eventType)',
     });
     const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.calendar_id)}/events?${qs}`;
     try {
@@ -126,7 +166,9 @@ export async function fetchCalendars(config, token, now, fetchImpl = fetch) {
       const body = await res.json();
       for (const ev of body.items || []) {
         const item = eventToItem(ev, cal, tz);
-        if (item) items.push({ ...item, _id: `${cal.calendar_id}/${ev.id}` });
+        // the same event can sit in several calendars (e.g. a school invite
+        // you accepted): de-duplicate by its iCal ID and start time
+        if (item) items.push({ ...item, _id: `${ev.iCalUID || `${cal.calendar_id}/${ev.id}`}|${item.start}` });
       }
     } catch (e) {
       if (e instanceof CalendarAuthError) throw e;
@@ -135,11 +177,15 @@ export async function fetchCalendars(config, token, now, fetchImpl = fetch) {
   }));
 
   items.sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : (a.all_day === b.all_day ? a.title.localeCompare(b.title) : (a.all_day ? -1 : 1))));
-  const byDay = {};
-  const seen = new Set();
+  // keep one copy of each event, preferring one that shows its title
+  const best = new Map();
   for (const it of items) {
-    if (seen.has(it._id)) continue;
-    seen.add(it._id);
+    const prev = best.get(it._id);
+    if (!prev || (prev.busy && !it.busy)) best.set(it._id, it);
+  }
+  const byDay = {};
+  for (const it of items) {
+    if (best.get(it._id) !== it) continue;
     const { days, _id, ...rest } = it;
     for (const d of days) (byDay[d] = byDay[d] || []).push(rest);
   }

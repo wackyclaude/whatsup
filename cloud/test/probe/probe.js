@@ -44,9 +44,17 @@ async function fakeNetwork(input, init = {}) {
     calls.revoke++;
     return new Response('');
   }
+  if (url.hostname === 'www.googleapis.com' && url.pathname.endsWith('/users/me/calendarList')) {
+    if (request.headers.get('Authorization') !== 'Bearer tok') return new Response('{}', { status: 401 });
+    return new Response(JSON.stringify({ items: [
+      { id: 'family-secret-id@group.calendar.google.com', summary: 'Family', backgroundColor: '#6AA9FF', selected: true },
+      { id: 'work-secret@company.com', summary: 'Work', selected: true },
+    ] }));
+  }
   if (url.hostname === 'www.googleapis.com') {
     calls.events++;
     if (request.headers.get('Authorization') !== 'Bearer tok') return new Response('{}', { status: 401 });
+    if (url.pathname.includes('work-secret')) return new Response('{"error":"hidden calendar was read"}', { status: 500 });
     return new Response(JSON.stringify({
       items: [
         { id: '1', summary: 'Birthday (sample)', start: { date: dayStr(0) }, end: { date: dayStr(1) } },
@@ -91,7 +99,7 @@ function envFor(baseEnv, overrides = {}) {
     WHATSUP_CONFIG: JSON.stringify({
       allowed_emails: ['parent@gmail.com'],
       location: { name: 'Groningen', latitude: 53.2194, longitude: 6.5665, timezone: tz },
-      calendars: [{ name: 'Family', calendar_id: 'family-secret-id@group.calendar.google.com', color: '#6AA9FF' }],
+      hide_calendars: ['Work'],   // calendars: left out = every ticked calendar
       cameras: [],
     }),
     ...overrides,

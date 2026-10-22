@@ -83,11 +83,19 @@ openssl rand -base64 32
 
 Copy the line it prints. If you'd rather not use Terminal, a password manager's "generate password" (40+ characters) works too.
 
-### 2. Find your calendar IDs
+### 2. Choose which calendars show
 
-- `"primary"` means **the main calendar of whoever is signed in**. For your own calendar, that's all you need.
-- **For a shared family calendar:** in [Google Calendar](https://calendar.google.com) → gear → **Settings** → click the calendar → **Integrate calendar** → copy the **Calendar ID**. It looks like `abc123@group.calendar.google.com`.
-  - Everyone who'll sign in needs access to that calendar in Google.
+**You don't need any calendar IDs.** The dashboard shows every calendar that's **ticked** in the left-hand list of [Google Calendar](https://calendar.google.com) for the signed-in person. That includes:
+- your own events
+- calendars shared with you, like the school calendar
+- calendars you subscribed to by link
+- holiday calendars
+
+It uses the same names and colours as Google Calendar, and shows each event once, even if it's in two calendars.
+
+- **To hide one on the dashboard** (say "Work"), add it to `hide_calendars` below. You can also untick it in Google Calendar.
+- **To show one only as "Busy"**, add it to `busy_calendars`.
+- Use the calendar's name as it appears in Google Calendar (capitals don't matter).
 
 ### 3. Add the four settings
 
@@ -100,15 +108,13 @@ In Cloudflare: your Worker → **Settings → Variables and Secrets → Add**:
 | `SESSION_SECRET` | **Secret** | the random key from step 1 |
 | `WHATSUP_CONFIG` | **Secret** | your settings (below) |
 
-`WHATSUP_CONFIG`. Change the email addresses and calendar ID, and keep the commas and quotes exactly:
+`WHATSUP_CONFIG`. Change the email addresses, and keep the commas and quotes exactly:
 
 ```json
 {
   "allowed_emails": ["you@gmail.com", "partner@gmail.com"],
-  "calendars": [
-    { "name": "Mine", "calendar_id": "primary", "color": "#6AA9FF" },
-    { "name": "Family", "calendar_id": "PASTE-FAMILY-CALENDAR-ID", "color": "#5ED39A" }
-  ],
+  "hide_calendars": ["Work"],
+  "busy_calendars": [],
   "location": { "name": "Groningen", "latitude": 53.2194, "longitude": 6.5665, "timezone": "Europe/Amsterdam" },
   "cameras": [
     { "name": "Golden Temple", "place": "Amritsar", "youtube_video_id": "" }
@@ -118,11 +124,13 @@ In Cloudflare: your Worker → **Settings → Variables and Secrets → Add**:
 }
 ```
 
-- **Smallest working version:** `{ "allowed_emails": ["you@gmail.com"] }`. That shows your own calendar in Groningen.
-- **Don't need a shared family calendar?** Delete the `"Family"` line, and the comma before it.
-- **Colours:** `#6AA9FF` blue, `#5ED39A` green, `#FF9F43` orange, `#FF7A90` pink, `#B9A7FF` purple.
-- **`"show_details": false`** on a calendar shows its events as "Busy". Events you mark Private in Google always show as "Busy".
+- **Smallest working version:** `{ "allowed_emails": ["you@gmail.com"] }`. That shows all your ticked calendars, with Groningen weather.
+- **Events you mark Private** in Google always show as "Busy".
 - **Cameras:** open a live stream you trust on YouTube. The ID is the 11 characters after `v=` in the address. A camera with an empty ID is hidden.
+- **Prefer a fixed list instead?** Replace the hide/busy lines with:
+  `"calendars": [ { "name": "School", "calendar_id": "PASTE-ID", "color": "#5ED39A" } ]`
+  - The Calendar ID is in Google Calendar → Settings → that calendar → **Integrate calendar**.
+  - `"calendar_id": "primary"` means the signed-in person's own calendar.
 
 Click **Deploy** (or *Save and deploy*).
 
@@ -159,7 +167,8 @@ For a wall-display feel, open the app and press **Control-Command-F** for full s
 |---|---|
 | Add a person who can sign in | Add their Gmail to `allowed_emails` in `WHATSUP_CONFIG` → Deploy |
 | Remove a person | Remove them from `allowed_emails` → Deploy. They're signed out everywhere on their next page load |
-| Change calendars, location, cameras | Edit `WHATSUP_CONFIG` → Deploy |
+| Show or hide a calendar | Tick or untick it in Google Calendar (or use `hide_calendars`) |
+| Change location or cameras | Edit `WHATSUP_CONFIG` → Deploy |
 | Sign one device out | **Sign out** (top right of the dashboard) |
 | Sign everyone out at once | Change `SESSION_SECRET` to a new random value → Deploy |
 | Lost a device / remove the app's access completely | <https://myaccount.google.com/permissions> → Whatsup → remove access (signs that account out everywhere) |
@@ -172,7 +181,9 @@ For a wall-display feel, open the app and press **Control-Command-F** for full s
 - **Google says `redirect_uri_mismatch`** — the address in Part B step 6 must be exactly your Cloudflare address plus `/auth/callback`. Google can take a few minutes to pick up a change.
 - **"That Google account isn't on this dashboard's list"** — add it to `allowed_emails` (lower-case is fine).
 - **"Please tick the See your calendars box"** — sign in again and tick the calendar permission.
-- **A calendar shows "not found in your Google account"** — the person signed in can't see that calendar, or the Calendar ID is wrong.
+- **A calendar is missing** — make sure it's ticked in Google Calendar for the person who's signed in, and not in `hide_calendars`. Changes show within 15 minutes.
+- **"not found in your Google account"** (only with a fixed `calendars` list) — the person signed in can't see that calendar, or the Calendar ID is wrong.
+- **A subscribed (by-link) calendar is behind** — Google refreshes those itself, sometimes only once a day.
 - **Top right says "Settings: …"** — something in `WHATSUP_CONFIG` needs fixing. For "not valid JSON", paste it into <https://jsonlint.com> to find the missing comma or quote.
 
 ## Undo / revoke

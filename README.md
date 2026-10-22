@@ -16,7 +16,7 @@ A calm, kid-friendly screen for the family MacBook. It runs as a **screensaver**
 |---|---|---|
 | Open it on | any computer, tablet or phone; installable as an app | the Mac it's installed on |
 | Sign-in | **Sign in with Google** — only accounts on your list | none needed (only that Mac can see it) |
-| Calendar | read from your own Google account (read-only) | your Google Calendar's secret iCal address |
+| Calendar | every calendar ticked in your Google Calendar, incl. shared (school) ones — read-only | your Google Calendar's secret iCal address |
 | Setup | in a browser: Cloudflare + Google, ~30 min | Terminal, ~15 min |
 | Cost | free | free |
 

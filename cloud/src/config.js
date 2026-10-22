@@ -55,10 +55,16 @@ export function loadConfig(raw) {
     problems.push('allowed_emails is empty — add your Google address');
   }
 
+  // Calendars: leave out (or "all") = every calendar ticked in Google Calendar.
+  const listOf = (v) => (Array.isArray(v) ? v.map((x) => String(x).trim().toLowerCase()).filter(Boolean) : []);
+  const hideCalendars = listOf(input.hide_calendars);
+  const busyCalendars = listOf(input.busy_calendars);
+  const calendarMode = Array.isArray(input.calendars) && input.calendars.length ? 'list' : 'auto';
+  if (input.calendars !== undefined && input.calendars !== 'all' && calendarMode === 'auto' && !Array.isArray(input.calendars)) {
+    problems.push('calendars should be "all" or a list');
+  }
   const calendars = [];
-  const calInput = Array.isArray(input.calendars) && input.calendars.length
-    ? input.calendars
-    : [{ name: 'My calendar', calendar_id: 'primary', color: '#6AA9FF' }];
+  const calInput = calendarMode === 'list' ? input.calendars : [];
   calInput.forEach((c, i) => {
     const id = String((c && c.calendar_id) || '').trim();
     if (!id || id.includes('PASTE')) {
@@ -69,7 +75,9 @@ export function loadConfig(raw) {
       name: String(c.name || `Calendar ${i + 1}`).slice(0, 40),
       calendar_id: id,
       color: HEX.test(String(c.color)) ? c.color : '#6AA9FF',
-      show_details: c.show_details !== false,
+      show_details: c.show_details !== false
+        && !busyCalendars.includes(id.toLowerCase())
+        && !busyCalendars.includes(String(c.name || '').toLowerCase()),
     });
   });
 
@@ -99,7 +107,10 @@ export function loadConfig(raw) {
     config: {
       allowed_emails: allowed,
       location: loc,
+      calendar_mode: calendarMode,
       calendars,
+      hide_calendars: hideCalendars,
+      busy_calendars: busyCalendars,
       cameras,
       panchang: { month_system: system },
       camera_rotate_minutes: rotate,

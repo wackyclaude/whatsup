@@ -1,10 +1,10 @@
 // Fetches and caches calendar + weather for /api/data.
 import { loadConfig } from './config.js';
-import { fetchCalendars, dayKeyIn, CalendarAuthError } from './google.js';
+import { fetchCalendars, listVisibleCalendars, dayKeyIn, CalendarAuthError } from './google.js';
 import { fetchWeather } from './weather.js';
 import { accessTokenFor, dropAccessToken, SignInError } from './oauth.js';
 
-export const VERSION = '2.0.0';
+export const VERSION = '2.1.0';
 
 // Best-effort memory cache per Worker instance. The page keeps showing its
 // last good data if a refresh fails, so a cold cache is harmless.
@@ -42,16 +42,21 @@ export async function getData(env, session, now = new Date(), fetchImpl = fetch)
     refresh(weatherEntry, config.refresh_minutes.weather, now, day, () => fetchWeather(config, now, fetchImpl))
       .then((e) => { weatherEntry = e; return e; }),
     refresh(calendarEntries.get(session.email), config.refresh_minutes.calendar, now, day, async () => {
+      const load = async (token) => {
+        const cfg = config.calendar_mode === 'auto'
+          ? { ...config, calendars: await listVisibleCalendars(config, token, fetchImpl) }
+          : config;
+        return fetchCalendars(cfg, token, now, fetchImpl);
+      };
       const token = await accessTokenFor(session.rt, creds, fetchImpl, now.getTime());
       try {
-        return await fetchCalendars(config, token, now, fetchImpl);
+        return await load(token);
       } catch (e) {
         if (!(e instanceof CalendarAuthError)) throw e;
         // Google rejected the cached access token: get a fresh one once.
         // If the sign-in itself was revoked, this throws SignInError('expired').
         dropAccessToken(session.rt);
-        const fresh = await accessTokenFor(session.rt, creds, fetchImpl, now.getTime());
-        return fetchCalendars(config, fresh, now, fetchImpl);
+        return load(await accessTokenFor(session.rt, creds, fetchImpl, now.getTime()));
       }
     }).then((e) => {
       if (calendarEntries.size > 20) calendarEntries.clear();
@@ -62,7 +67,7 @@ export async function getData(env, session, now = new Date(), fetchImpl = fetch)
 
   return {
     demo: false,
-    calendars_configured: config.calendars.length > 0,
+    calendars_configured: config.calendar_mode === 'auto' || config.calendars.length > 0,
     calendar: cal.data,
     calendar_updated: iso(cal.at),
     calendar_error: cal.error,

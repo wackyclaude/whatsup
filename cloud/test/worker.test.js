@@ -9,7 +9,7 @@ import {
   buildAuthUrl, exchangeCode, accessTokenFor, SignInError, _resetOAuthCache,
 } from '../src/oauth.js';
 import {
-  fetchCalendars, eventToItem, midnightIn, dayKeyIn, CalendarAuthError,
+  fetchCalendars, listVisibleCalendars, eventToItem, midnightIn, dayKeyIn, CalendarAuthError,
 } from '../src/google.js';
 import { parseWeather, weatherKind } from '../src/weather.js';
 import { loadConfig } from '../src/config.js';
@@ -167,6 +167,48 @@ test('fetchCalendars merges calendars, splits today/tomorrow, reports unknown ca
   await assert.rejects(fetchCalendars(config, 'bad-token', new Date(), fetchImpl), CalendarAuthError);
 });
 
+test('auto mode: shows every ticked calendar except hidden ones, Busy where asked, no duplicates', async () => {
+  const config = loadConfig(JSON.stringify({
+    allowed_emails: ['parent@gmail.com'],
+    hide_calendars: ['Work'],
+    busy_calendars: ['partner@gmail.com'],
+  })).config;
+  const list = {
+    items: [
+      { id: 'school@import.calendar.google.com', summary: 'ISG school calendar', backgroundColor: '#9fe1e7', selected: true },
+      { id: 'parent@gmail.com', summary: 'parent@gmail.com', backgroundColor: '#ac725e', selected: true, primary: true },
+      { id: 'work@company.com', summary: 'Work', selected: true },
+      { id: 'partner@gmail.com', summary: 'Partner', selected: true },
+      { id: 'unticked@group.calendar.google.com', summary: 'Old club', selected: false },
+      { id: 'hidden@group.calendar.google.com', summary: 'Hidden', selected: true, hidden: true },
+      { id: 'nl#holiday@group.v.calendar.google.com', summary: 'Holidays in the Netherlands', backgroundColor: 'not-a-colour', selected: true },
+    ],
+  };
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    calls.push(url);
+    assert.equal(init.headers.Authorization, 'Bearer tok');
+    if (url.includes('/users/me/calendarList')) return new Response(JSON.stringify(list));
+    const id = decodeURIComponent(url.match(/calendars\/([^/]+)\/events/)[1]);
+    const school = { id: 'x1', iCalUID: 'trip-uid', summary: 'School trip', start: { dateTime: '2026-10-22T09:00:00+02:00' }, end: { dateTime: '2026-10-22T15:00:00+02:00' } };
+    const byId = {
+      'school@import.calendar.google.com': [school],
+      'parent@gmail.com': [{ ...school, id: 'x2' }, { id: 'p1', summary: 'Dentist', start: { dateTime: '2026-10-22T16:00:00+02:00' }, end: { dateTime: '2026-10-22T17:00:00+02:00' } }],
+      'partner@gmail.com': [{ id: 'q1', summary: 'Secret plans', start: { dateTime: '2026-10-22T18:00:00+02:00' }, end: { dateTime: '2026-10-22T19:00:00+02:00' } }],
+      'nl#holiday@group.v.calendar.google.com': [],
+    };
+    assert.ok(id in byId, `should not read ${id}`);
+    return new Response(JSON.stringify({ items: byId[id] }));
+  };
+  const cals = await listVisibleCalendars(config, 'tok', fetchImpl);
+  assert.deepEqual(cals.map((c) => c.name), ['My calendar', 'ISG school calendar', 'Partner', 'Holidays in the Netherlands']);
+  assert.equal(cals[1].color, '#9fe1e7');
+  assert.match(cals[3].color, /^#[0-9A-F]{6}$/i);
+  const res = await fetchCalendars({ ...config, calendars: cals }, 'tok', new Date('2026-10-22T05:42:00Z'), fetchImpl);
+  assert.deepEqual(res.today.map((e) => e.title), ['School trip', 'Dentist', 'Busy']);
+  assert.ok(!calls.some((u) => u.includes('work%40company.com')), 'hidden calendar never read');
+});
+
 // ---------------------------------------------------------------- weather & config
 
 test('weather parsing', () => {
@@ -183,12 +225,16 @@ test('weather parsing', () => {
   assert.equal(weatherKind(0), 'sun');
 });
 
-test('config: allow-list required, defaults to your main calendar, problems reported not thrown', () => {
+test('config: allow-list required, defaults to all ticked calendars, problems reported not thrown', () => {
   assert.deepEqual(loadConfig(undefined).problems, ['WHATSUP_CONFIG secret is not set yet']);
   const minimal = loadConfig(JSON.stringify({ allowed_emails: ['Parent@Gmail.com'] }));
   assert.deepEqual(minimal.problems, []);
   assert.deepEqual(minimal.config.allowed_emails, ['parent@gmail.com']);
-  assert.deepEqual(minimal.config.calendars.map((c) => c.calendar_id), ['primary']);
+  assert.equal(minimal.config.calendar_mode, 'auto');
+  assert.equal(loadConfig(JSON.stringify({ allowed_emails: ['a@b.co'], calendars: 'all' })).config.calendar_mode, 'auto');
+  const listed = loadConfig(JSON.stringify({ allowed_emails: ['a@b.co'], calendars: [{ name: 'Work', calendar_id: 'w@x' }], busy_calendars: ['work'] }));
+  assert.equal(listed.config.calendar_mode, 'list');
+  assert.equal(listed.config.calendars[0].show_details, false);
   const noList = loadConfig(JSON.stringify({}));
   assert.ok(noList.problems.some((p) => p.includes('allowed_emails')));
   assert.deepEqual(noList.config.allowed_emails, []);
