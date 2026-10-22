@@ -1,38 +1,133 @@
 {
-  "_read_me": "Festival dates as observed in North India. Edit freely: one line per festival, date as YYYY-MM-DD. Ekadashi names are worked out automatically and don't need to be listed. Dates checked against published 2026 and 2027 Hindu festival calendars; confirm with your family's panchang for exact observance.",
+  "_read_me": "Festival dates are now worked out automatically (static/js/festivals.js, North Indian rules, calculated for Delhi). This list only needs entries where your family's calendar differs: a date here replaces the calculated date of the same festival within 10 days. Date as YYYY-MM-DD. The dates below were checked against published 2026 and 2027 calendars.",
   "festivals": [
-    { "date": "2026-10-25", "name": "Sharad Purnima" },
-    { "date": "2026-10-29", "name": "Karva Chauth" },
-    { "date": "2026-11-01", "name": "Ahoi Ashtami" },
-    { "date": "2026-11-06", "name": "Dhanteras" },
-    { "date": "2026-11-08", "name": "Diwali" },
-    { "date": "2026-11-11", "name": "Bhai Dooj" },
-    { "date": "2026-11-15", "name": "Chhath Puja" },
-    { "date": "2026-11-21", "name": "Tulsi Vivah" },
-    { "date": "2026-12-14", "name": "Vivah Panchami" },
-    { "date": "2026-12-20", "name": "Gita Jayanti" },
-
-    { "date": "2027-01-15", "name": "Makar Sankranti" },
-    { "date": "2027-02-11", "name": "Vasant Panchami" },
-    { "date": "2027-03-06", "name": "Maha Shivaratri" },
-    { "date": "2027-03-21", "name": "Holika Dahan" },
-    { "date": "2027-03-22", "name": "Holi" },
-    { "date": "2027-04-07", "name": "Chaitra Navratri begins" },
-    { "date": "2027-04-15", "name": "Ram Navami" },
-    { "date": "2027-04-20", "name": "Hanuman Jayanti" },
-    { "date": "2027-05-09", "name": "Akshaya Tritiya" },
-    { "date": "2027-07-18", "name": "Guru Purnima" },
-    { "date": "2027-08-17", "name": "Raksha Bandhan" },
-    { "date": "2027-08-25", "name": "Janmashtami" },
-    { "date": "2027-09-04", "name": "Ganesh Chaturthi" },
-    { "date": "2027-09-30", "name": "Navratri begins" },
-    { "date": "2027-10-09", "name": "Dussehra" },
-    { "date": "2027-10-15", "name": "Sharad Purnima" },
-    { "date": "2027-10-18", "name": "Karva Chauth" },
-    { "date": "2027-10-27", "name": "Dhanteras" },
-    { "date": "2027-10-29", "name": "Diwali" },
-    { "date": "2027-10-30", "name": "Govardhan Puja" },
-    { "date": "2027-10-31", "name": "Bhai Dooj" },
-    { "date": "2027-11-04", "name": "Chhath Puja" }
+    {
+      "date": "2026-10-25",
+      "name": "Sharad Purnima"
+    },
+    {
+      "date": "2026-10-29",
+      "name": "Karva Chauth"
+    },
+    {
+      "date": "2026-11-01",
+      "name": "Ahoi Ashtami"
+    },
+    {
+      "date": "2026-11-06",
+      "name": "Dhanteras"
+    },
+    {
+      "date": "2026-11-08",
+      "name": "Diwali"
+    },
+    {
+      "date": "2026-11-11",
+      "name": "Bhai Dooj"
+    },
+    {
+      "date": "2026-11-15",
+      "name": "Chhath Puja"
+    },
+    {
+      "date": "2026-11-21",
+      "name": "Tulsi Vivah"
+    },
+    {
+      "date": "2026-12-14",
+      "name": "Vivah Panchami"
+    },
+    {
+      "date": "2026-12-20",
+      "name": "Gita Jayanti"
+    },
+    {
+      "date": "2027-01-15",
+      "name": "Makar Sankranti"
+    },
+    {
+      "date": "2027-02-11",
+      "name": "Vasant Panchami"
+    },
+    {
+      "date": "2027-03-06",
+      "name": "Maha Shivaratri"
+    },
+    {
+      "date": "2027-03-21",
+      "name": "Holika Dahan"
+    },
+    {
+      "date": "2027-03-22",
+      "name": "Holi"
+    },
+    {
+      "date": "2027-04-07",
+      "name": "Chaitra Navratri begins"
+    },
+    {
+      "date": "2027-04-15",
+      "name": "Ram Navami"
+    },
+    {
+      "date": "2027-04-20",
+      "name": "Hanuman Jayanti"
+    },
+    {
+      "date": "2027-05-09",
+      "name": "Akshaya Tritiya"
+    },
+    {
+      "date": "2027-07-18",
+      "name": "Guru Purnima"
+    },
+    {
+      "date": "2027-08-17",
+      "name": "Raksha Bandhan"
+    },
+    {
+      "date": "2027-08-25",
+      "name": "Janmashtami"
+    },
+    {
+      "date": "2027-09-04",
+      "name": "Ganesh Chaturthi"
+    },
+    {
+      "date": "2027-09-30",
+      "name": "Navratri begins"
+    },
+    {
+      "date": "2027-10-09",
+      "name": "Dussehra"
+    },
+    {
+      "date": "2027-10-15",
+      "name": "Sharad Purnima"
+    },
+    {
+      "date": "2027-10-18",
+      "name": "Karva Chauth"
+    },
+    {
+      "date": "2027-10-27",
+      "name": "Dhanteras"
+    },
+    {
+      "date": "2027-10-29",
+      "name": "Diwali"
+    },
+    {
+      "date": "2027-10-30",
+      "name": "Govardhan Puja"
+    },
+    {
+      "date": "2027-10-31",
+      "name": "Bhai Dooj"
+    },
+    {
+      "date": "2027-11-04",
+      "name": "Chhath Puja"
+    }
   ]
 }

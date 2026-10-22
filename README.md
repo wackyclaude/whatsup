@@ -158,7 +158,7 @@ This opens a clean full-screen window in Chrome, if installed. Otherwise it open
 | Update to the latest version | `cd ~/Apps/whatsup && git pull && scripts/install.sh` |
 | Stop and remove | `scripts/uninstall.sh` (add `--purge` to delete settings too) |
 
-Festival dates are in `config/festivals.json`. They're checked against published 2026–27 calendars; add or edit lines as needed. Ekadashi names are worked out automatically.
+Festival dates are worked out automatically from the lunar calendar (North Indian rules, calculated for Delhi), so they keep going year after year. If your family's calendar differs on a date, add it to `config/festivals.json` — a date there always wins. Ekadashi names are worked out automatically too.
 
 ## Troubleshooting
 
@@ -184,7 +184,7 @@ server/configure.py   guided settings changes
 config/               example settings + festival list
 tools/make_moon.py    cuts static/img/moon.webp from NASA's full-moon image (assets/, credit: NASA)
 scripts/              install, configure, check, demo, open-app, uninstall
-tests/                python -m unittest discover tests  ·  TZ=Europe/Amsterdam node tests/test_sky.mjs
+tests/                python -m unittest discover tests  ·  TZ=Europe/Amsterdam node tests/test_sky.mjs (and test_festivals.mjs)
 ```
 
 Dependencies are pinned with hashes in `requirements.txt` (generated from `requirements.in`).

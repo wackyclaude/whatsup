@@ -2,6 +2,7 @@
 // All text from calendars is inserted with textContent, never as HTML.
 
 import * as Sky from './sky.js';
+import { festivalsBetween, mergeFestivals } from './festivals.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const params = new URLSearchParams(location.search);
@@ -9,7 +10,7 @@ const MODE = params.get('mode') === 'screensaver' ? 'screensaver' : 'app';
 const DATA_REFRESH_MS = 2 * 60 * 1000;
 const SKY_REFRESH_MS = 5 * 60 * 1000;
 
-const state = { settings: null, data: null, camIndex: 0, camRendered: null, dayKey: null };
+const state = { settings: null, data: null, camIndex: 0, camRendered: null, dayKey: null, festivals: null, festivalsDay: null };
 
 const $ = (id) => document.getElementById(id);
 const isCloud = () => !!(state.settings && state.settings.mode === 'cloud');
@@ -200,9 +201,25 @@ function renderSky() {
   renderPanchang(now, lat, lon);
 }
 
+// Calculated festival dates for the next two months, with the checked list
+// (config/festivals.json) taking priority. Worked out once a day.
+function allFestivals() {
+  const listed = (state.settings && state.settings.festivals) || [];
+  const today = dayKey(new Date());
+  if (state.festivalsDay !== today) {
+    try {
+      const calc = festivalsBetween(addDays(new Date(), -2), addDays(new Date(), 60));
+      state.festivals = mergeFestivals(calc, listed);
+    } catch (e) {
+      state.festivals = listed;
+    }
+    state.festivalsDay = today;
+  }
+  return state.festivals || listed;
+}
+
 function festivalsOn(key) {
-  const list = (state.settings && state.settings.festivals) || [];
-  return list.filter((f) => f.date === key).map((f) => f.name);
+  return allFestivals().filter((f) => f.date === key).map((f) => f.name);
 }
 
 function renderPanchang(now, lat, lon) {
@@ -257,7 +274,7 @@ function renderPanchang(now, lat, lon) {
   const coming = clear($('pan-coming'));
   const from = dayKey(addDays(now, 3));
   const until = dayKey(addDays(now, 45));
-  const next = ((state.settings && state.settings.festivals) || [])
+  const next = allFestivals()
     .filter((f) => f.date >= from && f.date <= until)
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 2);
