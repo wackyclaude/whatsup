@@ -10,9 +10,23 @@ A calm, kid-friendly screen for the family MacBook. It runs as a **screensaver**
 
 ![Dashboard with sample data](docs/screenshot.png)
 
+## Two ways to run it
+
+| | **Online (recommended)** | **On one Mac only** |
+|---|---|---|
+| Works on | any computer, any browser | the Mac it's installed on |
+| Calendar | your Google Calendar via a read-only robot account | your Google Calendar's secret iCal address |
+| Who can open it | only emails you approve (Cloudflare Access sign-in) | only that Mac |
+| Shows when idle | small helper opens it full-screen in Chrome | macOS screensaver |
+| Setup | browser only: Google Cloud + Cloudflare, ~40 min | Terminal, ~15 min |
+| Cost | free | free |
+
+- **Online:** follow **[docs/HOSTING.md](docs/HOSTING.md)**.
+- **One Mac only:** carry on below.
+
 ---
 
-## How it keeps things safe
+## How the one-Mac version keeps things safe
 
 - **Runs only on this Mac.** The dashboard is at `http://127.0.0.1:8765` and can't be reached from other devices.
 - **No admin rights.** Everything installs into your user account. Nothing needs `sudo`.
@@ -27,7 +41,7 @@ A calm, kid-friendly screen for the family MacBook. It runs as a **screensaver**
 
 ---
 
-## Set it up (first time, ~15 minutes)
+## Set it up on one Mac (first time, ~15 minutes)
 
 You'll use the **Terminal** app (Applications → Utilities → Terminal). Copy each command, paste it, press Enter.
 
@@ -164,6 +178,8 @@ Festival dates are in `config/festivals.json`. They're checked against published
 ## For developers
 
 ```
+cloud/                hosted version: Cloudflare Worker (src/), tests (npm test, npm run test:runtime)
+scripts/idle/         Mac helper that opens the hosted dashboard when idle (tests/test_idle.sh)
 server/whatsup.py     local server: calendar + weather fetch, cache, JSON API (Python 3.9+, stdlib + 2 deps)
 server/configure.py   guided settings changes
 static/               the page (HTML/CSS, ES modules, vendored libraries)

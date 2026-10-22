@@ -1,0 +1,22 @@
+{
+  // Cloudflare Worker for the hosted dashboard.
+  // Personal settings are NOT here: they are secrets set in the Cloudflare
+  // dashboard (WHATSUP_CONFIG, GOOGLE_SERVICE_ACCOUNT) plus two plain
+  // variables from Cloudflare Access (TEAM_DOMAIN, POLICY_AUD).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "whatsup",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  // Preview URLs would be a second, separately-protected address: keep them off.
+  "preview_urls": false,
+  "assets": {
+    "directory": "../static",
+    "binding": "ASSETS",
+    // Run the Worker (and its sign-in check) before serving ANY file.
+    "run_worker_first": true
+  },
+  // Keep variables set in the Cloudflare dashboard when redeploying.
+  "keep_vars": true,
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
+}

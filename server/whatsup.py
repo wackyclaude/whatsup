@@ -196,6 +196,8 @@ def public_settings(cfg: Dict[str, Any]) -> Dict[str, Any]:
         })
     return {
         "version": VERSION,
+        "mode": "local",
+        "problems": [],
         "location": cfg["location"],
         "panchang": cfg["panchang"],
         "cameras": cams,

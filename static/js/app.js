@@ -12,6 +12,7 @@ const SKY_REFRESH_MS = 5 * 60 * 1000;
 const state = { settings: null, data: null, camIndex: 0, camRendered: null, dayKey: null };
 
 const $ = (id) => document.getElementById(id);
+const isCloud = () => !!(state.settings && state.settings.mode === 'cloud');
 const hm = (d) => (d ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—');
 const shortDay = (d) => d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' });
 const longDay = (d) => d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -69,6 +70,12 @@ function renderStatus() {
   }
   const stamps = [d.calendar_updated, d.weather_updated].filter(Boolean).map((s) => new Date(s));
   const errors = [d.calendar_error, d.weather_error].filter(Boolean);
+  const problems = (state.settings && state.settings.problems) || [];
+  if (problems.length) {
+    status.className = 'status warn';
+    status.textContent = `Settings: ${problems[0]}`;
+    return;
+  }
   const latest = stamps.length ? new Date(Math.max(...stamps)) : null;
   if (errors.length) {
     status.className = 'status warn';
@@ -92,7 +99,9 @@ function renderCalendar() {
 
   if (!d.calendars_configured) {
     $('cal-empty').hidden = false;
-    $('cal-empty').textContent = 'Add a calendar: scripts/configure.sh add-calendar';
+    $('cal-empty').textContent = isCloud()
+      ? 'Add a calendar to WHATSUP_CONFIG in Cloudflare'
+      : 'Add a calendar: scripts/configure.sh add-calendar';
     return;
   }
   const cal = d.calendar;
@@ -380,6 +389,9 @@ function renderCamera() {
   if (!cams.length) {
     clear(frame);
     $('cam-empty').hidden = false;
+    $('cam-empty-text').textContent = isCloud()
+      ? 'Add a camera to WHATSUP_CONFIG in Cloudflare'
+      : 'Add a camera: scripts/configure.sh add-camera';
     $('cam-live').hidden = true;
     $('cam-name').textContent = '';
     return;
@@ -434,9 +446,22 @@ async function getJSON(url) {
   return r.json();
 }
 
+// If one source failed this time, keep showing its last good data.
+function mergeData(prev, next) {
+  if (!prev) return next;
+  const out = { ...next };
+  for (const kind of ['calendar', 'weather']) {
+    if (!next[kind] && prev[kind]) {
+      out[kind] = prev[kind];
+      out[`${kind}_updated`] = prev[`${kind}_updated`];
+    }
+  }
+  return out;
+}
+
 async function loadData() {
   try {
-    state.data = await getJSON('/api/data');
+    state.data = mergeData(state.data, await getJSON('/api/data'));
   } catch (e) {
     // keep showing what we have
   }

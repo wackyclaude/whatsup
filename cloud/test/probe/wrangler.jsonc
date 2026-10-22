@@ -1,0 +1,8 @@
+{
+  // TEST-ONLY configuration for the runtime probe. Never deploy this.
+  "name": "whatsup-probe",
+  "main": "probe.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "assets": { "directory": "../../../static", "binding": "ASSETS", "run_worker_first": true }
+}

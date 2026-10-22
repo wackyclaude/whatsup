@@ -5,3 +5,7 @@ __pycache__/
 # private settings never belong in git
 config/config.json
 *.local.json
+node_modules/
+.wrangler/
+.dev.vars*
+*.json.key
