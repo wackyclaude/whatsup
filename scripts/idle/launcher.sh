@@ -7,8 +7,11 @@
 #
 #  * Uses its own Chrome profile: your normal browsing, passwords and
 #    Google sign-ins are never touched, and the dashboard sign-in stays here.
-#  * Never opens on a locked screen or during quiet hours (so the display can
-#    sleep at night).
+#  * Never opens on a locked screen, during quiet hours, or while another app
+#    is keeping the display on (a film, a presentation).
+#  * Closes itself after SHOW_MINUTES and puts the display to sleep, so the
+#    Mac's normal screen lock still kicks in. It then waits for someone to use
+#    the Mac before it can open again.
 #  * Only closes windows it opened itself.
 
 set -u
@@ -22,7 +25,9 @@ IOREG="${WHATSUP_IOREG:-/usr/sbin/ioreg}"
 PGREP="${WHATSUP_PGREP:-/usr/bin/pgrep}"
 PKILL="${WHATSUP_PKILL:-/usr/bin/pkill}"
 OPEN="${WHATSUP_OPEN:-/usr/bin/open}"
+PMSET="${WHATSUP_PMSET:-/usr/bin/pmset}"
 nap() { sleep "${WHATSUP_TEST_SLEEP:-$1}"; }
+MINUTE_SECS="${WHATSUP_TEST_MINUTE_SECS:-60}"
 
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
 
@@ -48,7 +53,7 @@ idle_seconds() {
 }
 
 screen_locked() {
-  "$IOREG" -n Root -d1 2>/dev/null | /usr/bin/grep -q '"CGSSessionScreenIsLocked" = Yes'
+  "$IOREG" -n Root -d1 2>/dev/null | /usr/bin/grep -Eq '"CGSSessionScreenIsLocked" ?= ?Yes'
 }
 
 in_quiet_hours() {
@@ -56,6 +61,7 @@ in_quiet_hours() {
   start="$(conf QUIET_START 22)"
   end="$(conf QUIET_END 7)"
   is_number "$start" && is_number "$end" || return 1
+  start=$((10#$start)); end=$((10#$end))
   [ "$start" -eq "$end" ] && return 1
   hour=$((10#$(date +%H)))
   if [ "$start" -lt "$end" ]; then
@@ -80,6 +86,11 @@ open_dashboard() {
     --disable-features=Translate
 }
 
+# Another app (video player, presentation) is keeping the display awake
+other_app_keeps_display_on() {
+  "$PMSET" -g assertions 2>/dev/null | /usr/bin/awk '/^ *PreventUserIdleDisplaySleep[ \t]/ { found = ($2 > 0) } END { exit found ? 0 : 1 }'
+}
+
 close_dashboard() {
   "$PKILL" -TERM -f -- "--user-data-dir=$PROFILE" >/dev/null 2>&1
 }
@@ -87,12 +98,16 @@ close_dashboard() {
 mkdir -p "$PROFILE"
 chmod 700 "$SUPPORT" "$PROFILE" 2>/dev/null
 opened_by_us=0
+opened_at=0
+resting=0     # after a timed close: wait for real activity before reopening
 log "idle launcher started"
 
 while true; do
   URL="$(conf URL '')"
   MINUTES="$(conf IDLE_MINUTES 5)"
-  is_number "$MINUTES" && [ "$MINUTES" -ge 1 ] || MINUTES=5
+  is_number "$MINUTES" && MINUTES=$((10#$MINUTES)) && [ "$MINUTES" -ge 1 ] || MINUTES=5
+  SHOW="$(conf SHOW_MINUTES 60)"
+  is_number "$SHOW" && SHOW=$((10#$SHOW)) || SHOW=60
 
   if [[ ! "$URL" =~ ^https:// ]]; then
     log "no valid URL in $CONF; waiting"
@@ -113,18 +128,35 @@ while true; do
       opened_by_us=0
       nap 5
       continue
+    elif [ "$SHOW" -gt 0 ] && [ $(( $(date +%s) - opened_at )) -ge $((SHOW * MINUTE_SECS)) ]; then
+      log "shown for ${SHOW} min — closing and letting the display sleep"
+      close_dashboard
+      opened_by_us=0
+      resting=1
+      nap 3
+      "$PMSET" displaysleepnow >/dev/null 2>&1
+      nap 5
+      continue
     fi
     nap 1
     continue
   fi
 
-  if [ "$idle" -ge $((MINUTES * 60)) ] && ! dashboard_running && ! in_quiet_hours && ! screen_locked; then
+  if [ "$resting" -eq 1 ]; then
+    [ "$idle" -lt $((MINUTES * 60)) ] && resting=0   # someone used the Mac
+    nap 10
+    continue
+  fi
+
+  if [ "$idle" -ge $((MINUTES * 60)) ] && ! dashboard_running && ! in_quiet_hours && ! screen_locked \
+     && ! other_app_keeps_display_on; then
     log "idle ${idle}s — opening dashboard"
     case "$URL" in
       *\?*) open_dashboard "$URL&mode=screensaver" "$CHROME" ;;
       *)    open_dashboard "$URL?mode=screensaver" "$CHROME" ;;
     esac
     opened_by_us=1
+    opened_at=$(date +%s)
     nap 5
     continue
   fi

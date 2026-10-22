@@ -76,6 +76,11 @@ test('access: rejects missing, expired, wrong-audience, wrong-issuer and forged 
     assert.equal(r.ok, false, reason);
     assert.equal(r.reason, reason);
   }
+  // a key id that matches a built-in object property must not crash or pass
+  const proto = await sign(goodPayload, { alg: 'RS256', kid: 'constructor' });
+  const rp = await verifyAccess(reqWith(proto), env, certsFetch, now);
+  assert.equal(rp.ok, false);
+  assert.equal(rp.reason, 'unknown-key');
   const other = await rsaPair();
   const forged = await signJwt(other.privateKey, { alg: 'RS256', kid: 'k1' }, goodPayload);
   const r = await verifyAccess(reqWith(forged), env, certsFetch, now);
@@ -103,6 +108,11 @@ test('DST-safe midnight and day keys', () => {
   assert.equal(midnightIn('2026-10-26', 'Europe/Amsterdam').toISOString(), '2026-10-25T23:00:00.000Z');
   assert.equal(midnightIn('2027-03-28', 'Europe/Amsterdam').toISOString(), '2027-03-27T23:00:00.000Z');
   assert.equal(dayKeyIn(new Date('2026-10-22T22:30:00Z'), 'Europe/Amsterdam'), '2026-10-23');
+  // Santiago skips 00:00 → 01:00 on 6 Sep 2026: the day starts at 01:00 local (04:00Z)
+  const sc = midnightIn('2026-09-06', 'America/Santiago');
+  assert.equal(dayKeyIn(sc, 'America/Santiago'), '2026-09-06');
+  assert.equal(dayKeyIn(new Date(sc.getTime() - 1000), 'America/Santiago'), '2026-09-05');
+  assert.equal(midnightIn('2026-10-22', 'Asia/Kolkata').toISOString(), '2026-10-21T18:30:00.000Z');
 });
 
 test('events: private, hidden, all-day, cancelled and multi-day handling', () => {

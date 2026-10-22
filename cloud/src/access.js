@@ -9,6 +9,7 @@
 const enc = new TextEncoder();
 let jwksCache = { teamDomain: null, keys: null, fetchedAt: 0 };
 const JWKS_TTL_MS = 60 * 60 * 1000;
+const JWKS_MIN_REFRESH_MS = 60 * 1000; // unknown key ids can't force constant re-downloads
 
 function b64urlToBytes(s) {
   const pad = '='.repeat((4 - (s.length % 4)) % 4);
@@ -32,19 +33,20 @@ export function normaliseTeamDomain(value) {
 
 async function getKeys(teamDomain, fetchImpl, force = false) {
   const now = Date.now();
-  if (!force && jwksCache.teamDomain === teamDomain && jwksCache.keys && now - jwksCache.fetchedAt < JWKS_TTL_MS) {
+  const cached = jwksCache.teamDomain === teamDomain && jwksCache.keys;
+  if (cached && now - jwksCache.fetchedAt < (force ? JWKS_MIN_REFRESH_MS : JWKS_TTL_MS)) {
     return jwksCache.keys;
   }
   const res = await fetchImpl(`${teamDomain}/cdn-cgi/access/certs`);
   if (!res.ok) throw new Error(`certs HTTP ${res.status}`);
   const body = await res.json();
-  const keys = {};
+  const keys = new Map();
   for (const jwk of body.keys || []) {
     if (jwk.kty !== 'RSA' || !jwk.kid) continue;
-    keys[jwk.kid] = await crypto.subtle.importKey(
+    keys.set(jwk.kid, await crypto.subtle.importKey(
       'jwk', { kty: jwk.kty, n: jwk.n, e: jwk.e, alg: 'RS256', ext: true },
       { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify'],
-    );
+    ));
   }
   jwksCache = { teamDomain, keys, fetchedAt: now };
   return keys;
@@ -72,21 +74,26 @@ export async function verifyAccess(request, env, fetchImpl = fetch, nowSec = () 
   } catch (e) {
     return { ok: false, status: 403, reason: 'malformed' };
   }
-  if (header.alg !== 'RS256' || !header.kid) return { ok: false, status: 403, reason: 'bad-alg' };
+  if (!header || !payload || header.alg !== 'RS256' || typeof header.kid !== 'string') return { ok: false, status: 403, reason: 'bad-alg' };
 
   let keys;
   try {
     keys = await getKeys(teamDomain, fetchImpl);
-    if (!keys[header.kid]) keys = await getKeys(teamDomain, fetchImpl, true); // key rotation
+    if (!keys.has(header.kid)) keys = await getKeys(teamDomain, fetchImpl, true); // key rotation
   } catch (e) {
     return { ok: false, status: 503, reason: 'certs-unavailable' };
   }
-  const key = keys[header.kid];
+  const key = keys.get(header.kid);
   if (!key) return { ok: false, status: 403, reason: 'unknown-key' };
 
-  const valid = await crypto.subtle.verify(
-    'RSASSA-PKCS1-v1_5', key, b64urlToBytes(parts[2]), enc.encode(`${parts[0]}.${parts[1]}`),
-  );
+  let valid = false;
+  try {
+    valid = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5', key, b64urlToBytes(parts[2]), enc.encode(`${parts[0]}.${parts[1]}`),
+    );
+  } catch (e) {
+    valid = false;
+  }
   if (!valid) return { ok: false, status: 403, reason: 'bad-signature' };
 
   const now = nowSec();

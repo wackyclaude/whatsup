@@ -87,6 +87,8 @@ function offsetMinutes(date, timeZone) {
 }
 
 // Instant of local midnight for a "YYYY-MM-DD" in a time zone
+// (In zones where clocks jump at midnight, the day starts at 01:00 — this
+// returns the first instant that belongs to that day.)
 export function midnightIn(key, timeZone) {
   const [y, m, d] = key.split('-').map(Number);
   const guess = new Date(Date.UTC(y, m - 1, d));
@@ -94,6 +96,10 @@ export function midnightIn(key, timeZone) {
   let t = guess.getTime() - off1 * 60000;
   const off2 = offsetMinutes(new Date(t), timeZone);
   if (off2 !== off1) t = guess.getTime() - off2 * 60000;
+  // Make sure we landed on the right local day, then step back while the
+  // previous instants are still the same day.
+  for (let i = 0; i < 4 && dayKeyIn(new Date(t), timeZone) < key; i++) t += 3600000;
+  for (let i = 0; i < 4 && dayKeyIn(new Date(t - 3600000), timeZone) === key; i++) t -= 3600000;
   return new Date(t);
 }
 

@@ -101,7 +101,12 @@ PLIST
 chmod 644 "$PLIST"
 
 launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
+# bootout finishes in the background; retry briefly so re-running works
+for i in 1 2 3 4 5 6; do
+  launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null && break
+  [ "$i" -eq 6 ] && die "couldn't start the dashboard. Log out and back in, then run this again."
+  sleep 1
+done
 
 # ---------------------------------------------------------------- verify
 say "4/4  Checking it's running"

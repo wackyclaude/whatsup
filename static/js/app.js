@@ -112,12 +112,13 @@ function renderCalendar() {
   }
   // The server sends "today" as of its last refresh; if the day rolled over
   // and it hasn't refreshed yet, wait rather than show yesterday.
-  const today = dayKey(new Date());
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+  // "Today" in the dashboard's configured time zone (not the viewing device's)
+  const tz = state.settings && state.settings.location && state.settings.location.timezone;
+  const keyInTz = (d) => (tz ? d.toLocaleDateString('en-CA', { timeZone: tz }) : dayKey(d));
+  const today = keyInTz(new Date());
   const events = cal.today.filter((e) => (e.all_day
     ? e.start <= today && today < e.end
-    : new Date(e.end) > startOfToday));
+    : keyInTz(new Date(new Date(e.end).getTime() - 1000)) >= today));
 
   const allDay = events.filter((e) => e.all_day);
   if (allDay.length) allday.textContent = 'All day · ' + allDay.map((e) => e.title).join(', ');

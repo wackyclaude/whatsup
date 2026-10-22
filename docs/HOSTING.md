@@ -120,7 +120,7 @@ In the Worker → **Settings → Variables and Secrets → Add**, add these four
 - **Cameras:** open the live stream on YouTube. The ID is the 11 characters after `v=` in the address. A camera with an empty ID is hidden.
 - **`month_system`:** `purnimanta` (North India) or `amanta`.
 
-Click **Deploy** (or *Save and deploy*). Then **delete the downloaded key file** and empty the Bin.
+Click **Deploy** (or *Save and deploy*). Then **delete the downloaded key file** and empty the Trash.
 
 ### 5. Open it
 
@@ -137,7 +137,8 @@ If something isn't set up right, the top-right corner says **Settings: …** wit
 A Mac screensaver can't show a sign-in page. Instead, a small helper opens the dashboard full-screen after a few idle minutes and closes it the moment someone touches the keyboard or mouse.
 
 - It uses **its own Chrome profile**, so your normal browsing and Google sign-ins aren't involved.
-- It doesn't open on a locked screen, or during **quiet hours** (default 22:00–07:00), so the display can sleep at night.
+- It doesn't open on a locked screen, during **quiet hours** (default 22:00–07:00), or while another app is keeping the screen on (a film, a presentation).
+- After it has shown for a while (default **60 minutes**), it closes and puts the display to sleep. That lets the Mac's normal screen lock take over. It reopens only after someone has used the Mac and left it idle again.
 
 1. Install **Google Chrome** if the Mac doesn't have it.
 2. On <https://github.com/wackyclaude/whatsup>: **Code → Download ZIP**. Unzip it.
@@ -150,7 +151,7 @@ A Mac screensaver can't show a sign-in page. Instead, a small helper opens the d
    ```
 
    - Paste your dashboard address.
-   - Choose the idle minutes and quiet hours (press Enter for the defaults).
+   - Choose the idle minutes, how long it shows, and quiet hours (press Enter for the defaults).
 5. A Chrome window opens. Sign in once with your email code, check the dashboard shows, then close the window.
 
 That's it. To open it yourself any time (e.g. to switch cameras):
@@ -161,9 +162,14 @@ bash ~/Apps/whatsup/scripts/idle/open.sh
 
 To turn it off: `bash ~/Apps/whatsup/scripts/idle/uninstall.sh`. Add `--purge` to also sign that Mac out.
 
-> **Note:** the helper only shows a window. It doesn't lock the Mac. Keep macOS's own
-> lock settings (System Settings → Lock Screen) as you want them.
-> The live camera keeps the screen awake while it plays. Quiet hours are what let the display sleep at night.
+> **Important — the Mac is unlocked while the dashboard shows.** It's just a full-screen window:
+> anyone who touches the Mac gets the normal desktop. The live camera also stops macOS's own
+> screensaver and display-sleep from starting while it plays.
+>
+> To keep things safe:
+> - In **System Settings → Lock Screen**, set *Require password after screen saver begins or display is turned off* to **Immediately**.
+>   Once the dashboard's show time ends and the display sleeps, the Mac then locks.
+> - Ideally, run the dashboard under a separate **standard (non-admin) macOS user** for the family, so a child who touches it doesn't land in your account.
 
 ---
 
@@ -174,6 +180,7 @@ To turn it off: `bash ~/Apps/whatsup/scripts/idle/uninstall.sh`. Add `--purge` t
 | Change calendars, location, cameras | Cloudflare → Worker → Settings → Variables and Secrets → edit `WHATSUP_CONFIG` → Deploy |
 | Add or remove a person who can sign in | Cloudflare Zero Trust → Access → Applications → whatsup → Policies |
 | Update to the latest version | Nothing — Cloudflare redeploys automatically when the GitHub repo changes |
+| Change idle time / show time / quiet hours on a Mac | run `bash ~/Apps/whatsup/scripts/idle/install.sh` again |
 | See errors | Cloudflare → Worker → **Logs** |
 
 ## If something goes wrong
@@ -189,6 +196,13 @@ To turn it off: `bash ~/Apps/whatsup/scripts/idle/uninstall.sh`. Add `--purge` t
 - **Stop the robot reading a calendar:** remove it under that calendar's *Share with specific people*.
 - **Kill the robot's key:** Google Cloud → Service accounts → whatsup-dashboard → Keys → delete.
 - **Take the site offline:** Cloudflare → Worker → Settings → delete the Worker.
+
+## Protect the GitHub side too
+
+Cloudflare redeploys whatever is pushed to the repo's `main` branch. Whoever can push there can change what the site does, including reading the calendar.
+- Turn on **two-factor authentication** for your GitHub account.
+- Don't give others write access to the repo.
+- Optional: in the repo, **Settings → Branches → Add rule** for `main` and require pull requests.
 
 ## Costs
 
