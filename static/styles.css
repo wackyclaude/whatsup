@@ -198,3 +198,28 @@ h2 { margin: 0; }
 .cam-buttons button[aria-pressed="true"] { background: var(--green); color: #0B2418; border-color: var(--green); }
 .cam-buttons button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 body.screensaver .cam-buttons { display: none; }
+
+/* ---------- sign out ---------- */
+.signout {
+  height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid #3A4A5B; background: transparent;
+  color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.signout:hover, .signout:focus-visible { color: var(--text); border-color: var(--muted); }
+
+/* ---------- sign-in page (normal page, not the scaled stage) ---------- */
+html:has(body.signin-body), body.signin-body { overflow: auto; }
+.signin-body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+.signin { width: 100%; max-width: 420px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.signin-logo { border-radius: 22px; }
+.signin h1 { margin: 0; font-size: 34px; font-weight: 800; }
+.signin-sub { margin: 0; color: var(--muted); font-size: 15px; }
+.signin-msg { margin: 4px 0 0; padding: 10px 14px; border-radius: 10px; background: rgba(255,159,67,0.12); border: 1px solid rgba(255,159,67,0.4); color: var(--saffron-light); font-size: 14px; }
+.signin-btn {
+  margin-top: 8px; display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 28px;
+  border-radius: 999px; background: var(--blue); color: #0B1A2E; font-size: 16px; font-weight: 800; text-decoration: none;
+}
+.signin-btn:hover { background: #8DBEFF; color: #0B1A2E; }
+.signin-btn:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
+.signin-btn[aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
+.signin-note { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.signin-setup { margin: 0; color: var(--saffron-light); font-size: 13px; }

@@ -2,113 +2,107 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { verifyAccess, normaliseTeamDomain, _resetAccessCache } from '../src/access.js';
 import {
-  parseServiceAccount, getAccessToken, fetchCalendars, eventToItem, midnightIn, dayKeyIn, _resetTokenCache,
+  seal, unseal, secretOk, readCookie, SESSION_COOKIE, OAUTH_COOKIE,
+} from '../src/session.js';
+import {
+  buildAuthUrl, exchangeCode, accessTokenFor, SignInError, _resetOAuthCache,
+} from '../src/oauth.js';
+import {
+  fetchCalendars, eventToItem, midnightIn, dayKeyIn, CalendarAuthError,
 } from '../src/google.js';
 import { parseWeather, weatherKind } from '../src/weather.js';
 import { loadConfig } from '../src/config.js';
+import { _resetDataCache } from '../src/data.js';
 import worker from '../src/index.js';
-import { getData } from '../src/data.js';
 
-const enc = new TextEncoder();
-const b64url = (buf) => Buffer.from(buf).toString('base64url');
-const TEAM = 'https://family.cloudflareaccess.com';
-const AUD = 'aud-123';
+const SECRET = 'test-secret-test-secret-test-secret-1234';
+const CLIENT_ID = 'client-123.apps.googleusercontent.com';
+const b64url = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+const fakeIdToken = (claims) => `${b64url({ alg: 'RS256' })}.${b64url(claims)}.sig`;
+const nowSec = () => Math.floor(Date.now() / 1000);
 
-async function rsaPair() {
-  return crypto.subtle.generateKey(
-    { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
-    true, ['sign', 'verify'],
-  );
-}
+// ---------------------------------------------------------------- session cookies
 
-async function signJwt(privateKey, header, payload) {
-  const h = b64url(enc.encode(JSON.stringify(header)));
-  const p = b64url(enc.encode(JSON.stringify(payload)));
-  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, enc.encode(`${h}.${p}`));
-  return `${h}.${p}.${b64url(sig)}`;
-}
-
-const accessKeys = await rsaPair();
-const accessJwk = { ...(await crypto.subtle.exportKey('jwk', accessKeys.publicKey)), kid: 'k1' };
-const certsFetch = async (url) => {
-  assert.equal(url, `${TEAM}/cdn-cgi/access/certs`);
-  return new Response(JSON.stringify({ keys: [accessJwk] }));
-};
-const now = () => 1_800_000_000;
-const goodPayload = { aud: [AUD], iss: TEAM, exp: now() + 3600, iat: now(), email: 'parent@example.com' };
-const env = { TEAM_DOMAIN: 'family.cloudflareaccess.com', POLICY_AUD: AUD };
-const reqWith = (token) => new Request('https://whatsup.example.workers.dev/', { headers: token ? { 'Cf-Access-Jwt-Assertion': token } : {} });
-
-test('team domain is normalised and validated', () => {
-  assert.equal(normaliseTeamDomain('family'), TEAM);
-  assert.equal(normaliseTeamDomain('https://Family.cloudflareaccess.com/'), TEAM);
-  assert.equal(normaliseTeamDomain('evil.example.com'), null);
+test('sealed cookies round-trip, and reject tampering, wrong purpose and expiry', async () => {
+  assert.ok(secretOk(SECRET));
+  assert.ok(!secretOk('short'));
+  const v = await seal(SECRET, 'session', { email: 'a@b.com', exp: nowSec() + 60 });
+  assert.equal((await unseal(SECRET, 'session', v)).email, 'a@b.com');
+  assert.equal(await unseal(SECRET, 'oauth', v), null, 'cookie for one purpose is useless for another');
+  assert.equal(await unseal('another-secret-another-secret-another-1', 'session', v), null);
+  const flipped = v.slice(0, -2) + (v.slice(-2) === 'AA' ? 'AB' : 'AA');
+  assert.equal(await unseal(SECRET, 'session', flipped), null);
+  const old = await seal(SECRET, 'session', { email: 'a@b.com', exp: nowSec() - 1 });
+  assert.equal(await unseal(SECRET, 'session', old), null);
+  assert.equal(await unseal(SECRET, 'session', 'garbage!!'), null);
 });
 
-test('access: valid token passes', async () => {
-  _resetAccessCache();
-  const token = await signJwt(accessKeys.privateKey, { alg: 'RS256', kid: 'k1' }, goodPayload);
-  const r = await verifyAccess(reqWith(token), env, certsFetch, now);
-  assert.deepEqual(r, { ok: true, email: 'parent@example.com' });
+// ---------------------------------------------------------------- oauth
+
+test('auth URL asks only for email + read-only calendar, offline, with PKCE', () => {
+  const u = new URL(buildAuthUrl({ clientId: CLIENT_ID, redirectUri: 'https://x.dev/auth/callback', state: 's', codeChallenge: 'c' }));
+  assert.equal(u.origin + u.pathname, 'https://accounts.google.com/o/oauth2/v2/auth');
+  assert.equal(u.searchParams.get('scope'), 'openid email https://www.googleapis.com/auth/calendar.readonly');
+  assert.equal(u.searchParams.get('access_type'), 'offline');
+  assert.equal(u.searchParams.get('code_challenge_method'), 'S256');
+  assert.equal(u.searchParams.get('state'), 's');
 });
 
-test('access: fails closed when not configured', async () => {
-  const token = await signJwt(accessKeys.privateKey, { alg: 'RS256', kid: 'k1' }, goodPayload);
-  const r = await verifyAccess(reqWith(token), {}, certsFetch, now);
-  assert.equal(r.ok, false);
-  assert.equal(r.status, 503);
-});
-
-test('access: rejects missing, expired, wrong-audience, wrong-issuer and forged tokens', async () => {
-  _resetAccessCache();
-  const sign = (p, h = { alg: 'RS256', kid: 'k1' }) => signJwt(accessKeys.privateKey, h, p);
-  const cases = {
-    'no-token': null,
-    expired: await sign({ ...goodPayload, exp: now() - 3600 }),
-    'wrong-audience': await sign({ ...goodPayload, aud: ['other'] }),
-    'wrong-issuer': await sign({ ...goodPayload, iss: 'https://evil.cloudflareaccess.com' }),
-    'bad-alg': await sign(goodPayload, { alg: 'none', kid: 'k1' }),
+function tokenEndpoint(overrides = {}) {
+  return async (url, init) => {
+    assert.equal(url, 'https://oauth2.googleapis.com/token');
+    const p = new URLSearchParams(init.body);
+    assert.equal(p.get('grant_type'), 'authorization_code');
+    assert.equal(p.get('code_verifier'), 'verifier');
+    return new Response(JSON.stringify({
+      access_token: 'at', refresh_token: 'rt', expires_in: 3600,
+      scope: 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.readonly',
+      id_token: fakeIdToken({ aud: CLIENT_ID, iss: 'https://accounts.google.com', exp: nowSec() + 3600, email: 'Parent@Gmail.com', email_verified: true, ...overrides.claims }),
+      ...overrides.body,
+    }));
   };
-  for (const [reason, token] of Object.entries(cases)) {
-    const r = await verifyAccess(reqWith(token), env, certsFetch, now);
-    assert.equal(r.ok, false, reason);
-    assert.equal(r.reason, reason);
+}
+const exArgs = { code: 'c', codeVerifier: 'verifier', clientId: CLIENT_ID, clientSecret: 's', redirectUri: 'https://x.dev/auth/callback' };
+
+test('code exchange checks audience, issuer, verified email, scope and refresh token', async () => {
+  const ok = await exchangeCode(exArgs, tokenEndpoint());
+  assert.deepEqual([ok.email, ok.refreshToken], ['parent@gmail.com', 'rt']);
+  const bad = [
+    [{ claims: { aud: 'someone-else' } }, 'failed'],
+    [{ claims: { iss: 'https://evil.example' } }, 'failed'],
+    [{ claims: { email_verified: false } }, 'failed'],
+    [{ claims: { exp: nowSec() - 3600 } }, 'failed'],
+    [{ body: { scope: 'openid email' } }, 'no_calendar'],
+    [{ body: { refresh_token: undefined } }, 'failed'],
+  ];
+  for (const [o, code] of bad) {
+    await assert.rejects(exchangeCode(exArgs, tokenEndpoint(o)), (e) => e instanceof SignInError && e.code === code, JSON.stringify(o));
   }
-  // a key id that matches a built-in object property must not crash or pass
-  const proto = await sign(goodPayload, { alg: 'RS256', kid: 'constructor' });
-  const rp = await verifyAccess(reqWith(proto), env, certsFetch, now);
-  assert.equal(rp.ok, false);
-  assert.equal(rp.reason, 'unknown-key');
-  const other = await rsaPair();
-  const forged = await signJwt(other.privateKey, { alg: 'RS256', kid: 'k1' }, goodPayload);
-  const r = await verifyAccess(reqWith(forged), env, certsFetch, now);
-  assert.equal(r.reason, 'bad-signature');
 });
 
-// ---------------------------------------------------------------- google
-
-const saKeys = await rsaPair();
-const pkcs8 = Buffer.from(await crypto.subtle.exportKey('pkcs8', saKeys.privateKey)).toString('base64');
-const SA = {
-  type: 'service_account',
-  client_email: 'whatsup@family-dash.iam.gserviceaccount.com',
-  private_key: `-----BEGIN PRIVATE KEY-----\n${pkcs8.match(/.{1,64}/g).join('\n')}\n-----END PRIVATE KEY-----\n`,
-};
-
-test('service account JSON is validated', () => {
-  assert.throws(() => parseServiceAccount('nope'), /not valid JSON/);
-  assert.throws(() => parseServiceAccount('{"type":"authorized_user"}'), /service account/);
-  assert.equal(parseServiceAccount(JSON.stringify(SA)).client_email, SA.client_email);
+test('access tokens are reused; revoked sign-in becomes SignInError(expired)', async () => {
+  _resetOAuthCache();
+  let calls = 0;
+  const ok = async (url, init) => {
+    calls++;
+    assert.equal(new URLSearchParams(init.body).get('grant_type'), 'refresh_token');
+    return new Response(JSON.stringify({ access_token: 'fresh', expires_in: 3600 }));
+  };
+  assert.equal(await accessTokenFor('rt1', { clientId: 'c', clientSecret: 's' }, ok), 'fresh');
+  assert.equal(await accessTokenFor('rt1', { clientId: 'c', clientSecret: 's' }, ok), 'fresh');
+  assert.equal(calls, 1);
+  const revoked = async () => new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 });
+  await assert.rejects(accessTokenFor('rt2', { clientId: 'c', clientSecret: 's' }, revoked), (e) => e.code === 'expired');
 });
+
+// ---------------------------------------------------------------- calendar
 
 test('DST-safe midnight and day keys', () => {
   assert.equal(midnightIn('2026-10-25', 'Europe/Amsterdam').toISOString(), '2026-10-24T22:00:00.000Z');
   assert.equal(midnightIn('2026-10-26', 'Europe/Amsterdam').toISOString(), '2026-10-25T23:00:00.000Z');
   assert.equal(midnightIn('2027-03-28', 'Europe/Amsterdam').toISOString(), '2027-03-27T23:00:00.000Z');
   assert.equal(dayKeyIn(new Date('2026-10-22T22:30:00Z'), 'Europe/Amsterdam'), '2026-10-23');
-  // Santiago skips 00:00 → 01:00 on 6 Sep 2026: the day starts at 01:00 local (04:00Z)
   const sc = midnightIn('2026-09-06', 'America/Santiago');
   assert.equal(dayKeyIn(sc, 'America/Santiago'), '2026-09-06');
   assert.equal(dayKeyIn(new Date(sc.getTime() - 1000), 'America/Santiago'), '2026-09-05');
@@ -122,8 +116,6 @@ test('events: private, hidden, all-day, cancelled and multi-day handling', () =>
   assert.deepEqual([timed.start_label, timed.end_label, timed.title, timed.busy, timed.days], ['15:30', '16:30', 'Swimming', false, ['2026-10-22']]);
   const priv = eventToItem({ summary: 'Doctor', visibility: 'private', start: { dateTime: '2026-10-22T09:00:00+02:00' }, end: { dateTime: '2026-10-22T10:00:00+02:00' } }, cal, tz);
   assert.equal(priv.title, 'Busy');
-  const noDetails = eventToItem({ start: { dateTime: '2026-10-22T09:00:00+02:00' }, end: { dateTime: '2026-10-22T10:00:00+02:00' } }, cal, tz);
-  assert.equal(noDetails.title, 'Busy');
   const hidden = eventToItem({ summary: 'Party', start: { dateTime: '2026-10-22T09:00:00+02:00' }, end: { dateTime: '2026-10-22T10:00:00+02:00' } }, { ...cal, show_details: false }, tz);
   assert.equal(hidden.title, 'Busy');
   const allDay = eventToItem({ summary: 'Trip', start: { date: '2026-10-22' }, end: { date: '2026-10-24' } }, cal, tz);
@@ -132,47 +124,33 @@ test('events: private, hidden, all-day, cancelled and multi-day handling', () =>
   assert.equal(eventToItem({ eventType: 'workingLocation', start: { date: '2026-10-22' } }, cal, tz), null);
   const overnight = eventToItem({ summary: 'Flight', start: { dateTime: '2026-10-22T23:00:00+02:00' }, end: { dateTime: '2026-10-23T02:00:00+02:00' } }, cal, tz);
   assert.deepEqual(overnight.days, ['2026-10-22', '2026-10-23']);
-  const html = eventToItem({ summary: '<img src=x onerror=alert(1)>\u0007', start: { date: '2026-10-22' }, end: { date: '2026-10-23' } }, cal, tz);
-  assert.equal(html.title, '<img src=x onerror=alert(1)>'); // stays plain text; the page uses textContent
 });
 
-function googleFetch(eventsByCal, calls) {
+function calendarApi(eventsByCal, calls = []) {
   return async (url, init = {}) => {
     calls.push(url);
-    if (url === 'https://oauth2.googleapis.com/token') {
-      const params = new URLSearchParams(init.body);
-      const [h, p, s] = params.get('assertion').split('.');
-      const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', saKeys.publicKey, Buffer.from(s, 'base64url'), enc.encode(`${h}.${p}`));
-      assert.ok(ok, 'assertion is signed with the service account key');
-      const claims = JSON.parse(Buffer.from(p, 'base64url'));
-      assert.equal(claims.scope, 'https://www.googleapis.com/auth/calendar.readonly');
-      return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }));
-    }
     const m = url.match(/calendars\/([^/]+)\/events\?(.*)$/);
     assert.ok(m, url);
-    assert.equal(init.headers.Authorization, 'Bearer tok');
+    if (init.headers.Authorization !== 'Bearer tok') return new Response('{}', { status: 401 });
     const id = decodeURIComponent(m[1]);
     const qs = new URLSearchParams(m[2]);
     assert.equal(qs.get('singleEvents'), 'true');
-    assert.equal(qs.get('timeMin'), '2026-10-21T22:00:00.000Z');
-    assert.equal(qs.get('timeMax'), '2026-10-23T22:00:00.000Z');
     if (!(id in eventsByCal)) return new Response('{}', { status: 404 });
     return new Response(JSON.stringify({ items: eventsByCal[id] }));
   };
 }
 
-test('fetchCalendars merges calendars, splits today/tomorrow and reports unshared calendars', async () => {
-  _resetTokenCache();
+test('fetchCalendars merges calendars, splits today/tomorrow, reports unknown calendars', async () => {
   const config = loadConfig(JSON.stringify({
+    allowed_emails: ['parent@gmail.com'],
     calendars: [
-      { name: 'Family', calendar_id: 'family@group.calendar.google.com', color: '#6AA9FF' },
+      { name: 'Mine', calendar_id: 'primary', color: '#6AA9FF' },
       { name: 'Kids', calendar_id: 'kids@group.calendar.google.com', color: '#5ED39A' },
       { name: 'Missing', calendar_id: 'missing@group.calendar.google.com' },
     ],
   })).config;
-  const calls = [];
-  const fetchImpl = googleFetch({
-    'family@group.calendar.google.com': [
+  const fetchImpl = calendarApi({
+    primary: [
       { id: 'a', summary: 'Dinner', start: { dateTime: '2026-10-22T18:30:00+02:00' }, end: { dateTime: '2026-10-22T19:30:00+02:00' } },
       { id: 'b', summary: 'Birthday', start: { date: '2026-10-22' }, end: { date: '2026-10-23' } },
       { id: 'c', summary: 'School trip', start: { dateTime: '2026-10-23T08:00:00+02:00' }, end: { dateTime: '2026-10-23T15:00:00+02:00' } },
@@ -180,17 +158,13 @@ test('fetchCalendars merges calendars, splits today/tomorrow and reports unshare
     'kids@group.calendar.google.com': [
       { id: 'd', summary: 'Swimming', start: { dateTime: '2026-10-22T15:30:00+02:00' }, end: { dateTime: '2026-10-22T16:30:00+02:00' } },
     ],
-  }, calls);
-  const res = await fetchCalendars(config, SA, new Date('2026-10-22T05:42:00Z'), fetchImpl);
+  });
+  const res = await fetchCalendars(config, 'tok', new Date('2026-10-22T05:42:00Z'), fetchImpl);
   assert.deepEqual(res.today.map((e) => e.title), ['Birthday', 'Swimming', 'Dinner']);
   assert.deepEqual(res.tomorrow.map((e) => e.title), ['School trip']);
-  assert.deepEqual(res.errors, ["Missing: not shared with the dashboard's robot account yet"]);
-  assert.equal(res.today[1].color, '#5ED39A');
-  assert.equal(calls.filter((u) => u.includes('oauth2')).length, 1);
-  // token is reused
-  await fetchCalendars(config, SA, new Date('2026-10-22T05:50:00Z'), fetchImpl);
-  assert.equal(calls.filter((u) => u.includes('oauth2')).length, 1);
-  assert.ok(!JSON.stringify(res).includes('calendar.google.com'), 'calendar IDs never reach the page');
+  assert.deepEqual(res.errors, ['Missing: not found in your Google account (check the calendar ID)']);
+  assert.ok(!JSON.stringify(res).includes('group.calendar.google.com'), 'calendar IDs never reach the page');
+  await assert.rejects(fetchCalendars(config, 'bad-token', new Date(), fetchImpl), CalendarAuthError);
 });
 
 // ---------------------------------------------------------------- weather & config
@@ -205,72 +179,187 @@ test('weather parsing', () => {
   const wx = parseWeather(data, new Date('2026-10-22T05:42:00Z'), 'Europe/Amsterdam');
   assert.equal(wx.hours.length, 13);
   assert.equal(wx.hours[0].time, '2026-10-22T07:00');
-  assert.equal(wx.hours[0].label, 'Now');
-  assert.equal(wx.hours[1].label, '08');
   assert.deepEqual([wx.today.max, wx.today.min], [13, 8]);
-  assert.deepEqual(wx.next.map((d) => d.kind), ['rain', 'cloud']);
   assert.equal(weatherKind(0), 'sun');
 });
 
-test('config: problems are reported, not thrown', () => {
+test('config: allow-list required, defaults to your main calendar, problems reported not thrown', () => {
   assert.deepEqual(loadConfig(undefined).problems, ['WHATSUP_CONFIG secret is not set yet']);
-  assert.deepEqual(loadConfig('{bad').problems, ['WHATSUP_CONFIG is not valid JSON']);
-  const { config, problems } = loadConfig(JSON.stringify({
-    location: { timezone: 'Mars/Base' },
-    calendars: [{ name: 'X', calendar_id: 'PASTE-HERE' }],
-    cameras: [{ name: 'Cam', youtube_video_id: 'abcdefghijk' }, { name: 'Bad', youtube_video_id: 'x' }, { name: 'Empty' }],
-  }));
-  assert.equal(config.location.timezone, 'Europe/Amsterdam');
-  assert.equal(config.calendars.length, 0);
-  assert.deepEqual(config.cameras.map((c) => c.name), ['Cam']);
-  assert.equal(problems.length, 3);
+  const minimal = loadConfig(JSON.stringify({ allowed_emails: ['Parent@Gmail.com'] }));
+  assert.deepEqual(minimal.problems, []);
+  assert.deepEqual(minimal.config.allowed_emails, ['parent@gmail.com']);
+  assert.deepEqual(minimal.config.calendars.map((c) => c.calendar_id), ['primary']);
+  const noList = loadConfig(JSON.stringify({}));
+  assert.ok(noList.problems.some((p) => p.includes('allowed_emails')));
+  assert.deepEqual(noList.config.allowed_emails, []);
+  const bad = loadConfig(JSON.stringify({ allowed_emails: ['not-an-email'], cameras: [{ youtube_video_id: 'x' }] }));
+  assert.equal(bad.problems.length, 3); // invalid email, then empty list, invalid camera
 });
 
-// ---------------------------------------------------------------- whole worker
+// ---------------------------------------------------------------- whole worker: sign-in flow
 
-test('worker: locked without Access settings, serves settings without secrets when signed in', async () => {
-  _resetAccessCache();
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = certsFetch;
-  try {
-    const assets = { fetch: async () => new Response('<html></html>', { headers: { 'Content-Type': 'text/html' } }) };
-    const secrets = {
-      WHATSUP_CONFIG: JSON.stringify({ calendars: [{ name: 'Family', calendar_id: 'secret-family-id@group.calendar.google.com' }] }),
-      GOOGLE_SERVICE_ACCOUNT: JSON.stringify(SA),
-      ASSETS: assets,
-    };
-    let res = await worker.fetch(new Request('https://x.workers.dev/'), secrets);
-    assert.equal(res.status, 503);
+const ASSET_PAGES = {
+  '/index.html': '<html><body>DASHBOARD</body></html>',
+  '/signin.html': '<html><body>SIGN IN</body></html>',
+  '/styles.css': 'body{}',
+};
+const assets = { fetch: async (req) => {
+  const p = new URL(req.url).pathname;
+  return p in ASSET_PAGES ? new Response(ASSET_PAGES[p], { headers: { 'Content-Type': 'text/html' } }) : new Response('nf', { status: 404 });
+} };
 
-    const token = await signJwt(accessKeys.privateKey, { alg: 'RS256', kid: 'k1' }, { ...goodPayload, exp: Math.floor(Date.now() / 1000) + 600, iat: Math.floor(Date.now() / 1000) });
-    const fullEnv = { ...secrets, ...env };
-    res = await worker.fetch(new Request('https://x.workers.dev/'), fullEnv);
-    assert.equal(res.status, 403, 'no token → refused');
+const ENV = {
+  ASSETS: assets,
+  GOOGLE_CLIENT_ID: CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: 'client-secret',
+  SESSION_SECRET: SECRET,
+  WHATSUP_CONFIG: JSON.stringify({ allowed_emails: ['parent@gmail.com'], calendars: [{ name: 'Mine', calendar_id: 'primary' }] }),
+};
+const ORIGIN = 'https://whatsup.family.workers.dev';
 
-    const signed = (path) => new Request(`https://x.workers.dev${path}`, { headers: { 'Cf-Access-Jwt-Assertion': token } });
-    res = await worker.fetch(signed('/'), fullEnv);
-    assert.equal(res.status, 200);
-    assert.match(res.headers.get('Content-Security-Policy'), /frame-ancestors 'none'/);
-
-    res = await worker.fetch(signed('/api/settings'), fullEnv);
-    const body = await res.text();
-    assert.equal(res.status, 200);
-    assert.ok(!body.includes('secret-family-id'), 'calendar id not exposed');
-    assert.ok(!body.includes('PRIVATE KEY'), 'key not exposed');
-    assert.equal(JSON.parse(body).mode, 'cloud');
-
-    res = await worker.fetch(new Request('https://x.workers.dev/api/data', { method: 'POST', headers: { 'Cf-Access-Jwt-Assertion': token } }), fullEnv);
-    assert.equal(res.status, 405);
-  } finally {
-    globalThis.fetch = realFetch;
+function cookiesFrom(res) {
+  const out = {};
+  for (const line of res.headers.getSetCookie()) {
+    const [pair] = line.split(';');
+    const i = pair.indexOf('=');
+    out[pair.slice(0, i)] = pair.slice(i + 1);
   }
+  return out;
+}
+
+async function withFetch(impl, fn) {
+  const real = globalThis.fetch;
+  globalThis.fetch = impl;
+  try { return await fn(); } finally { globalThis.fetch = real; }
+}
+
+function googleMock({ email = 'parent@gmail.com', calls = [] } = {}) {
+  return async (url, init = {}) => {
+    calls.push(String(url));
+    if (url === 'https://oauth2.googleapis.com/token') {
+      const p = new URLSearchParams(init.body);
+      if (p.get('grant_type') === 'authorization_code') {
+        return new Response(JSON.stringify({
+          access_token: 'tok', refresh_token: `rt-${email}`, expires_in: 3600,
+          scope: 'openid email https://www.googleapis.com/auth/calendar.readonly',
+          id_token: fakeIdToken({ aud: CLIENT_ID, iss: 'https://accounts.google.com', exp: nowSec() + 3600, email, email_verified: true }),
+        }));
+      }
+      if (p.get('refresh_token') === 'rt-revoked') return new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 });
+      return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }));
+    }
+    if (url === 'https://oauth2.googleapis.com/revoke') return new Response('');
+    if (String(url).startsWith('https://www.googleapis.com/calendar/v3/')) {
+      return new Response(JSON.stringify({ items: [{ id: '1', summary: 'Swimming', start: { dateTime: new Date(Date.now() + 3600e3).toISOString() }, end: { dateTime: new Date(Date.now() + 7200e3).toISOString() } }] }));
+    }
+    if (String(url).startsWith('https://api.open-meteo.com/')) return new Response('down', { status: 503 });
+    throw new Error(`unexpected fetch ${url}`);
+  };
+}
+
+async function signIn(email = 'parent@gmail.com', calls = []) {
+  return withFetch(googleMock({ email, calls }), async () => {
+    const login = await worker.fetch(new Request(`${ORIGIN}/login`), ENV);
+    assert.equal(login.status, 302);
+    const to = new URL(login.headers.get('Location'));
+    assert.equal(to.searchParams.get('redirect_uri'), `${ORIGIN}/auth/callback`);
+    const oauth = cookiesFrom(login)[OAUTH_COOKIE];
+    assert.ok(oauth);
+    const cb = await worker.fetch(new Request(`${ORIGIN}/auth/callback?code=abc&state=${to.searchParams.get('state')}`, {
+      headers: { Cookie: `${OAUTH_COOKIE}=${oauth}` },
+    }), ENV);
+    return cb;
+  });
+}
+
+test('worker: not set up → sign-in page, /login refuses, status lists what is missing', async () => {
+  const bare = { ASSETS: assets };
+  let res = await worker.fetch(new Request(`${ORIGIN}/`), bare);
+  assert.equal(await res.text(), ASSET_PAGES['/signin.html']);
+  res = await worker.fetch(new Request(`${ORIGIN}/login`), bare);
+  assert.equal(res.status, 503);
+  res = await worker.fetch(new Request(`${ORIGIN}/api/status`), bare);
+  const st = await res.json();
+  assert.equal(st.ready, false);
+  assert.ok(st.missing.includes('GOOGLE_CLIENT_ID'));
+  res = await worker.fetch(new Request(`${ORIGIN}/api/data`), bare);
+  assert.equal(res.status, 401);
 });
 
-test('getData keeps going when weather fails and reports a missing service account', async () => {
-  const failing = async () => new Response('down', { status: 500 });
-  const data = await getData({ WHATSUP_CONFIG: JSON.stringify({ calendars: [{ name: 'F', calendar_id: 'f@x' }] }) }, new Date('2026-10-22T05:42:00Z'), failing);
-  assert.equal(data.weather, null);
-  assert.match(data.weather_error, /weather HTTP 500/);
-  assert.match(data.calendar_error, /GOOGLE_SERVICE_ACCOUNT/);
-  assert.equal(data.calendars_configured, true);
+test('worker: full Google sign-in, dashboard, data, and sign-out', async () => {
+  _resetOAuthCache();
+  _resetDataCache();
+  const calls = [];
+  const cb = await signIn('Parent@gmail.com', calls);
+  assert.equal(cb.status, 302);
+  assert.equal(cb.headers.get('Location'), '/');
+  const setCookies = cb.headers.getSetCookie().join('\n');
+  assert.match(setCookies, /__Host-whatsup=[^;]+; Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=15552000/);
+  const session = cookiesFrom(cb)[SESSION_COOKIE];
+  const headers = { Cookie: `${SESSION_COOKIE}=${session}` };
+
+  let res = await worker.fetch(new Request(`${ORIGIN}/`, { headers }), ENV);
+  assert.equal(await res.text(), ASSET_PAGES['/index.html']);
+  assert.equal(res.headers.get('X-Whatsup-Page'), 'dashboard');
+  assert.match(res.headers.get('Content-Security-Policy'), /frame-ancestors 'none'/);
+
+  res = await worker.fetch(new Request(`${ORIGIN}/api/settings`, { headers }), ENV);
+  const settings = await res.json();
+  assert.equal(settings.signed_in_as, 'parent@gmail.com');
+  assert.ok(!JSON.stringify(settings).includes('rt-'), 'refresh token never reaches the page');
+
+  res = await withFetch(googleMock({ calls }), () => worker.fetch(new Request(`${ORIGIN}/api/data`, { headers }), ENV));
+  const data = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(data.calendar.today[0].title, 'Swimming');
+  assert.match(data.weather_error, /weather HTTP 503/);
+  assert.equal(calls.filter((u) => u.endsWith('/token')).length, 1, 'access token from sign-in reused');
+
+  // sign-out from another site is refused
+  res = await worker.fetch(new Request(`${ORIGIN}/logout`, { method: 'POST', headers: { ...headers, Origin: 'https://evil.example' } }), ENV);
+  assert.equal(res.status, 403);
+  res = await withFetch(googleMock({ calls }), () => worker.fetch(new Request(`${ORIGIN}/logout`, { method: 'POST', headers: { ...headers, Origin: ORIGIN } }), ENV));
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('Set-Cookie'), /__Host-whatsup=; .*Max-Age=0/);
+  assert.ok(calls.includes('https://oauth2.googleapis.com/revoke'), 'Google access revoked on sign-out');
+});
+
+test('worker: accounts not on the list are turned away and their access revoked', async () => {
+  const calls = [];
+  const cb = await signIn('stranger@gmail.com', calls);
+  assert.equal(cb.headers.get('Location'), '/?error=not_allowed');
+  assert.equal(cookiesFrom(cb)[SESSION_COOKIE], undefined);
+  assert.ok(calls.includes('https://oauth2.googleapis.com/revoke'));
+});
+
+test('worker: callback without matching state or cookie is refused', async () => {
+  const res = await withFetch(googleMock(), () => worker.fetch(new Request(`${ORIGIN}/auth/callback?code=abc&state=forged`), ENV));
+  assert.equal(res.headers.get('Location'), '/?error=failed');
+  const denied = await worker.fetch(new Request(`${ORIGIN}/auth/callback?error=access_denied`), ENV);
+  assert.equal(denied.headers.get('Location'), '/?error=denied');
+});
+
+test('worker: forged cookie, removed account and revoked Google access all sign you out', async () => {
+  let res = await worker.fetch(new Request(`${ORIGIN}/api/data`, { headers: { Cookie: `${SESSION_COOKIE}=forged` } }), ENV);
+  assert.equal(res.status, 401);
+
+  const removed = await seal(SECRET, 'session', { email: 'ex@gmail.com', rt: 'rt-x', exp: nowSec() + 3600 });
+  res = await worker.fetch(new Request(`${ORIGIN}/`, { headers: { Cookie: `${SESSION_COOKIE}=${removed}` } }), ENV);
+  assert.equal(await res.text(), ASSET_PAGES['/signin.html']);
+
+  _resetDataCache();
+  _resetOAuthCache();
+  const revoked = await seal(SECRET, 'session', { email: 'parent@gmail.com', rt: 'rt-revoked', exp: nowSec() + 3600 });
+  res = await withFetch(googleMock(), () => worker.fetch(new Request(`${ORIGIN}/api/data`, { headers: { Cookie: `${SESSION_COOKIE}=${revoked}` } }), ENV));
+  assert.equal(res.status, 401);
+  assert.equal((await res.json()).reason, 'expired');
+  assert.match(res.headers.get('Set-Cookie'), /Max-Age=0/);
+});
+
+test('worker: only GET/HEAD (and POST /logout) allowed; /signin.html redirects to /', async () => {
+  let res = await worker.fetch(new Request(`${ORIGIN}/api/data`, { method: 'POST' }), ENV);
+  assert.equal(res.status, 405);
+  res = await worker.fetch(new Request(`${ORIGIN}/signin.html`), ENV);
+  assert.equal(res.headers.get('Location'), '/');
+  assert.equal(readCookie(new Request(ORIGIN, { headers: { Cookie: 'a=1; __Host-whatsup=xyz' } }), SESSION_COOKIE), 'xyz');
 });

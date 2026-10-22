@@ -1,67 +1,6 @@
-// Reads family calendars with the Google Calendar API, using a service
-// account (a "robot" Google account) that you share calendars with,
-// read-only. It can only see the calendars you explicitly share with it.
-
-const TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
-const enc = new TextEncoder();
-
-let tokenCache = { email: null, token: null, expiresAt: 0 };
-
-function b64url(bytes) {
-  let s = '';
-  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  for (let i = 0; i < arr.length; i++) s += String.fromCharCode(arr[i]);
-  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-const b64urlStr = (str) => b64url(enc.encode(str));
-
-export function parseServiceAccount(raw) {
-  let sa;
-  try {
-    sa = typeof raw === 'string' ? JSON.parse(raw) : raw;
-  } catch (e) {
-    throw new Error('GOOGLE_SERVICE_ACCOUNT is not valid JSON — paste the whole key file');
-  }
-  if (!sa || sa.type !== 'service_account' || !sa.client_email || !sa.private_key) {
-    throw new Error('GOOGLE_SERVICE_ACCOUNT should be the JSON key file of a Google service account');
-  }
-  return sa;
-}
-
-async function importPrivateKey(pem) {
-  const body = pem.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, '').replace(/\s+/g, '');
-  const der = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
-  return crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
-}
-
-export async function getAccessToken(sa, fetchImpl = fetch, nowMs = Date.now()) {
-  if (tokenCache.email === sa.client_email && tokenCache.token && nowMs < tokenCache.expiresAt - 120000) {
-    return tokenCache.token;
-  }
-  const iat = Math.floor(nowMs / 1000);
-  const header = b64urlStr(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const claims = b64urlStr(JSON.stringify({
-    iss: sa.client_email, scope: SCOPE, aud: TOKEN_URL, iat, exp: iat + 3600,
-  }));
-  const key = await importPrivateKey(sa.private_key);
-  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, enc.encode(`${header}.${claims}`));
-  const assertion = `${header}.${claims}.${b64url(sig)}`;
-
-  const res = await fetchImpl(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }).toString(),
-  });
-  if (!res.ok) throw new Error(`Google sign-in failed (HTTP ${res.status}) — check the service account key`);
-  const body = await res.json();
-  tokenCache = { email: sa.client_email, token: body.access_token, expiresAt: nowMs + (body.expires_in || 3600) * 1000 };
-  return body.access_token;
-}
-
-export function _resetTokenCache() {
-  tokenCache = { email: null, token: null, expiresAt: 0 };
-}
+// Reads calendars with the Google Calendar API, using the signed-in
+// person's own Google access (read-only). The API expands repeating events
+// for us and returns only today's and tomorrow's events.
 
 // ------------------------------------------------------------------ dates
 
@@ -152,12 +91,13 @@ export function eventToItem(ev, cal, timeZone) {
   };
 }
 
-export async function fetchCalendars(config, sa, now, fetchImpl = fetch) {
+export class CalendarAuthError extends Error {}
+
+export async function fetchCalendars(config, token, now, fetchImpl = fetch) {
   const tz = config.location.timezone;
   const today = dayKeyIn(now, tz);
   const timeMin = midnightIn(today, tz).toISOString();
   const timeMax = midnightIn(addDaysKey(today, 2), tz).toISOString();
-  const token = await getAccessToken(sa, fetchImpl, now.getTime());
 
   const items = [];
   const errors = [];
@@ -169,8 +109,9 @@ export async function fetchCalendars(config, sa, now, fetchImpl = fetch) {
     const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.calendar_id)}/events?${qs}`;
     try {
       const res = await fetchImpl(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 401) throw new CalendarAuthError('token rejected');
       if (res.status === 404 || res.status === 403) {
-        errors.push(`${cal.name}: not shared with the dashboard's robot account yet`);
+        errors.push(`${cal.name}: not found in your Google account (check the calendar ID)`);
         return;
       }
       if (!res.ok) {
@@ -183,6 +124,7 @@ export async function fetchCalendars(config, sa, now, fetchImpl = fetch) {
         if (item) items.push({ ...item, _id: `${cal.calendar_id}/${ev.id}` });
       }
     } catch (e) {
+      if (e instanceof CalendarAuthError) throw e;
       errors.push(`${cal.name}: network error`);
     }
   }));

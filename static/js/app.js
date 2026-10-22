@@ -442,9 +442,31 @@ function renderCamTime() {
 // ------------------------------------------------------------ data loading
 
 async function getJSON(url) {
-  const r = await fetch(url, { cache: 'no-store' });
+  const r = await fetch(url, { cache: 'no-store', credentials: 'same-origin' });
+  if (r.status === 401) {
+    // signed out (or Google access was revoked): back to the sign-in page
+    let reason = '';
+    try { reason = (await r.json()).reason || ''; } catch (e) { /* ignore */ }
+    location.href = reason === 'expired' ? '/?signin=expired' : '/';
+    throw new Error('signed out');
+  }
   if (!r.ok) throw new Error(`${url}: ${r.status}`);
   return r.json();
+}
+
+function setupSignOut() {
+  const btn = $('signout');
+  if (!isCloud() || MODE === 'screensaver') return;
+  btn.hidden = false;
+  if (state.settings.signed_in_as) btn.title = `Signed in as ${state.settings.signed_in_as}`;
+  btn.addEventListener('click', async () => {
+    if (!confirm('Sign out of the family dashboard on this device?')) return;
+    try {
+      await fetch('/logout', { method: 'POST', credentials: 'same-origin' });
+    } finally {
+      location.href = '/';
+    }
+  });
 }
 
 // If one source failed this time, keep showing its last good data.
@@ -485,10 +507,12 @@ async function start() {
       await new Promise((r) => setTimeout(r, 5000));
     }
   }
+  setupSignOut();
   renderClock();
   renderSky();
   renderCamera();
   await loadData();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
   setInterval(renderClock, 10 * 1000);
   setInterval(loadData, DATA_REFRESH_MS);

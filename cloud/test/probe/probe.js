@@ -1,78 +1,51 @@
 // TEST-ONLY Worker. Runs the real dashboard Worker inside workerd (Cloudflare's
-// runtime) with fake Google, weather and Access services, so crypto, dates and
-// routing are checked in the same runtime as production.
+// runtime) with fake Google and weather services, so crypto, cookies, dates
+// and routing are checked in the same runtime as production.
 //
 //   npm run test:runtime        (starts it, runs GET /__selftest, stops)
 //
-// Never deploy this: it signs its own Access tokens.
+// Never deploy this: it signs people in without Google.
 import worker from '../../src/index.js';
+import { seal, SESSION_COOKIE, OAUTH_COOKIE } from '../../src/session.js';
 
-const enc = new TextEncoder();
-const b64url = (buf) => {
-  let s = '';
-  const a = new Uint8Array(buf);
-  for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]);
-  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-};
-const TEAM = 'https://family.cloudflareaccess.com';
-const AUD = 'probe-aud';
 const tz = 'Europe/Amsterdam';
+const CLIENT_ID = 'probe-client.apps.googleusercontent.com';
+const SECRET = 'probe-secret-probe-secret-probe-secret-99';
+const calls = { token: 0, refresh: 0, events: 0, weather: 0, revoke: 0 };
 
-let setup = null;
-async function init() {
-  if (setup) return setup;
-  const gen = () => crypto.subtle.generateKey(
-    { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify'],
-  );
-  const access = await gen();
-  const sa = await gen();
-  const jwk = { ...(await crypto.subtle.exportKey('jwk', access.publicKey)), kid: 'kid1' };
-  const pkcs8 = b64url(await crypto.subtle.exportKey('pkcs8', sa.privateKey)).replace(/-/g, '+').replace(/_/g, '/');
-  const pem = `-----BEGIN PRIVATE KEY-----\n${pkcs8.match(/.{1,64}/g).join('\n')}\n-----END PRIVATE KEY-----\n`;
-  setup = { access, sa, jwk, pem, calls: { certs: 0, token: 0, events: 0, weather: 0 } };
-  return setup;
-}
-
-async function token() {
-  const { access } = await init();
-  const now = Math.floor(Date.now() / 1000);
-  const h = b64url(enc.encode(JSON.stringify({ alg: 'RS256', kid: 'kid1' })));
-  const p = b64url(enc.encode(JSON.stringify({ aud: [AUD], iss: TEAM, exp: now + 3600, iat: now, email: 'parent@example.com' })));
-  const s = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', access.privateKey, enc.encode(`${h}.${p}`));
-  return `${h}.${p}.${b64url(s)}`;
-}
-
+const b64 = (obj) => btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const keyIn = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 const dayStr = (offset) => keyIn(new Date(Date.now() + offset * 86400e3));
 function at(offset, hh, mm) {
-  // local wall-clock time in Amsterdam, as an ISO string with offset
   const day = dayStr(offset);
-  const probe = new Date(`${day}T12:00:00Z`);
-  const local = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' }).format(probe);
+  const local = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' }).format(new Date(`${day}T12:00:00Z`));
   const off = Number(local) - 12;
-  const sign = off >= 0 ? '+' : '-';
-  return `${day}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00${sign}${String(Math.abs(off)).padStart(2, '0')}:00`;
+  return `${day}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00${off >= 0 ? '+' : '-'}${String(Math.abs(off)).padStart(2, '0')}:00`;
 }
 
 async function fakeNetwork(input, init = {}) {
-  const st = await init_();
   const request = new Request(input, init);
   const url = new URL(request.url);
-  if (url.href === `${TEAM}/cdn-cgi/access/certs`) {
-    st.calls.certs++;
-    return new Response(JSON.stringify({ keys: [st.jwk] }));
-  }
   if (url.href === 'https://oauth2.googleapis.com/token') {
-    st.calls.token++;
-    const assertion = new URLSearchParams(await request.text()).get('assertion');
-    const [h, p, s] = assertion.split('.');
-    const sig = Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
-    const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', st.sa.publicKey, sig, enc.encode(`${h}.${p}`));
-    if (!ok) return new Response('bad signature', { status: 400 });
+    const p = new URLSearchParams(await request.text());
+    if (p.get('grant_type') === 'authorization_code') {
+      calls.token++;
+      if (p.get('client_secret') !== 'probe-client-secret' || !p.get('code_verifier')) return new Response('{}', { status: 400 });
+      return new Response(JSON.stringify({
+        access_token: 'tok', refresh_token: 'rt-parent', expires_in: 3600,
+        scope: 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.readonly',
+        id_token: `${b64({ alg: 'RS256' })}.${b64({ aud: CLIENT_ID, iss: 'https://accounts.google.com', exp: Math.floor(Date.now() / 1000) + 3600, email: 'parent@gmail.com', email_verified: true })}.sig`,
+      }));
+    }
+    calls.refresh++;
     return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }));
   }
+  if (url.href === 'https://oauth2.googleapis.com/revoke') {
+    calls.revoke++;
+    return new Response('');
+  }
   if (url.hostname === 'www.googleapis.com') {
-    st.calls.events++;
+    calls.events++;
     if (request.headers.get('Authorization') !== 'Bearer tok') return new Response('{}', { status: 401 });
     return new Response(JSON.stringify({
       items: [
@@ -86,7 +59,7 @@ async function fakeNetwork(input, init = {}) {
     }));
   }
   if (url.hostname === 'api.open-meteo.com') {
-    st.calls.weather++;
+    calls.weather++;
     const times = [];
     for (let d = 0; d < 4; d++) for (let h = 0; h < 24; h++) times.push(`${dayStr(d)}T${String(h).padStart(2, '0')}:00`);
     const hr = (i) => i % 24;
@@ -108,45 +81,67 @@ async function fakeNetwork(input, init = {}) {
   }
   return new Response('blocked in probe', { status: 599 });
 }
-const init_ = init;
 
-function envFor(baseEnv) {
+function envFor(baseEnv, overrides = {}) {
   return {
     ASSETS: baseEnv.ASSETS,
-    TEAM_DOMAIN: 'family',
-    POLICY_AUD: AUD,
-    GOOGLE_SERVICE_ACCOUNT: JSON.stringify({ type: 'service_account', client_email: 'robot@family-dash.iam.gserviceaccount.com', private_key: setup.pem }),
+    GOOGLE_CLIENT_ID: CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: 'probe-client-secret',
+    SESSION_SECRET: SECRET,
     WHATSUP_CONFIG: JSON.stringify({
+      allowed_emails: ['parent@gmail.com'],
       location: { name: 'Groningen', latitude: 53.2194, longitude: 6.5665, timezone: tz },
       calendars: [{ name: 'Family', calendar_id: 'family-secret-id@group.calendar.google.com', color: '#6AA9FF' }],
       cameras: [],
     }),
+    ...overrides,
   };
 }
+
+const cookieValue = (res, name) => {
+  for (const line of res.headers.getSetCookie()) {
+    if (line.startsWith(`${name}=`)) return line.split(';')[0].slice(name.length + 1);
+  }
+  return null;
+};
 
 function check(results, name, cond, detail) {
   results.push({ name, ok: !!cond, detail: cond ? undefined : detail });
 }
 
 async function selftest(baseEnv) {
-  await init();
   const env = envFor(baseEnv);
   const results = [];
-  const t = await token();
-  const call = (path, tok = t) => worker.fetch(new Request(`https://probe.example${path}`, { headers: tok ? { 'Cf-Access-Jwt-Assertion': tok } : {} }), env);
+  const base = 'https://probe.example';
+  const get = (path, headers = {}) => worker.fetch(new Request(`${base}${path}`, { headers }), env);
 
-  let r = await call('/', null);
-  check(results, 'unsigned request refused', r.status === 403, r.status);
-  r = await worker.fetch(new Request('https://probe.example/'), { ASSETS: baseEnv.ASSETS });
-  check(results, 'locked when Access not configured', r.status === 503, r.status);
-  r = await call('/');
-  const html = await r.text();
-  check(results, 'page served when signed in', r.status === 200 && html.includes('<html'), r.status);
+  let r = await get('/');
+  let body = await r.text();
+  check(results, 'signed-out visitor gets the sign-in page', r.status === 200 && body.includes('Sign in with Google') && r.headers.get('X-Whatsup-Page') === 'signin', r.status);
+  r = await get('/api/data');
+  check(results, 'data refused when signed out', r.status === 401, r.status);
+  r = await worker.fetch(new Request(`${base}/login`), { ASSETS: baseEnv.ASSETS });
+  check(results, 'sign-in refused until set up', r.status === 503, r.status);
+  r = await worker.fetch(new Request(`${base}/api/status`), { ASSETS: baseEnv.ASSETS });
+  check(results, 'status lists missing settings', (await r.json()).missing.length >= 3, 'status');
+
+  r = await get('/login');
+  const to = new URL(r.headers.get('Location'));
+  const oauth = cookieValue(r, OAUTH_COOKIE);
+  check(results, 'login redirects to Google with PKCE', r.status === 302 && to.hostname === 'accounts.google.com' && to.searchParams.get('code_challenge') && oauth, r.status);
+  r = await get(`/auth/callback?code=abc&state=${to.searchParams.get('state')}`, { Cookie: `${OAUTH_COOKIE}=${oauth}` });
+  const session = cookieValue(r, SESSION_COOKIE);
+  check(results, 'callback signs in and sets an encrypted cookie', r.status === 302 && r.headers.get('Location') === '/' && session && !session.includes('parent'), r.headers.get('Location'));
+  const auth = { Cookie: `${SESSION_COOKIE}=${session}` };
+
+  r = await get('/', auth);
+  body = await r.text();
+  check(results, 'dashboard served when signed in', r.status === 200 && body.includes('id="stage"') && r.headers.get('X-Whatsup-Page') === 'dashboard', r.status);
   check(results, 'security headers present', (r.headers.get('Content-Security-Policy') || '').includes("frame-ancestors 'none'"), r.headers.get('Content-Security-Policy'));
-  r = await call('/api/settings');
+  r = await get('/api/settings', auth);
   const settings = await r.json();
-  check(results, 'settings ok', settings.mode === 'cloud' && settings.problems.length === 0, settings.problems);
-  r = await call('/api/data');
+  check(results, 'settings ok', settings.mode === 'cloud' && settings.problems.length === 0 && settings.signed_in_as === 'parent@gmail.com', settings.problems);
+  r = await get('/api/data', auth);
   const data = await r.json();
   check(results, 'calendar fetched', data.calendar_error === null && data.calendar, data.calendar_error);
   check(results, 'weather fetched', data.weather_error === null && data.weather && data.weather.hours.length === 13, data.weather_error);
@@ -155,24 +150,30 @@ async function selftest(baseEnv) {
     JSON.stringify(titles) === JSON.stringify(['Birthday (sample)', 'School drop-off', 'Busy', 'Swimming', 'Family dinner']), titles);
   const labels = data.calendar ? data.calendar.today.filter((e) => !e.all_day).map((e) => e.start_label) : [];
   check(results, 'local time labels', JSON.stringify(labels) === JSON.stringify(['07:45', '09:00', '15:30', '18:30']), labels);
-  check(results, 'tomorrow first event', data.calendar && data.calendar.tomorrow[0] && data.calendar.tomorrow[0].title === 'School trip', data.calendar && data.calendar.tomorrow);
-  check(results, 'calendar id never exposed', !JSON.stringify(data).includes('family-secret-id') && !JSON.stringify(settings).includes('family-secret-id'), 'leak');
-  await (await call('/api/data')).json();
-  check(results, 'Google token reused', setup.calls.token === 1, setup.calls);
-  return { ok: results.every((x) => x.ok), results, calls: setup.calls };
+  check(results, 'tokens and calendar ids never exposed', !/rt-parent|family-secret-id/.test(JSON.stringify(data) + JSON.stringify(settings)), 'leak');
+  check(results, 'no extra Google token calls', calls.token === 1 && calls.refresh === 0, calls);
+  r = await get('/manifest.webmanifest');
+  check(results, 'app manifest served', r.status === 200 && (await r.json()).short_name === 'Whatsup', r.status);
+
+  r = await worker.fetch(new Request(`${base}/logout`, { method: 'POST', headers: { ...auth, Origin: base } }), env);
+  check(results, 'sign-out clears cookie and revokes', r.status === 200 && /Max-Age=0/.test(r.headers.get('Set-Cookie')) && calls.revoke === 1, calls);
+  return { ok: results.every((x) => x.ok), results, calls };
 }
 
 export default {
   async fetch(request, baseEnv) {
-    await init();
     globalThis.fetch = fakeNetwork; // all outbound traffic goes to the fakes above
     const url = new URL(request.url);
     if (url.pathname === '/__selftest') {
       return new Response(JSON.stringify(await selftest(baseEnv), null, 2), { headers: { 'Content-Type': 'application/json' } });
     }
-    // Browse the signed-in dashboard locally (for screenshots): inject a token.
+    // Browse locally as a signed-in parent (for screenshots): add a session cookie.
+    const env = envFor(baseEnv);
     const headers = new Headers(request.headers);
-    headers.set('Cf-Access-Jwt-Assertion', await token());
-    return worker.fetch(new Request(request, { headers }), envFor(baseEnv));
+    if (!url.searchParams.has('signedout')) {
+      const s = await seal(SECRET, 'session', { email: 'parent@gmail.com', rt: 'rt-parent', exp: Math.floor(Date.now() / 1000) + 3600 });
+      headers.set('Cookie', `${SESSION_COOKIE}=${s}`);
+    }
+    return worker.fetch(new Request(request, { headers }), env);
   },
 };

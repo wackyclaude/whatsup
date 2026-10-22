@@ -1,112 +1,113 @@
-# Put the dashboard online
+# Put the dashboard online (web app with "Sign in with Google")
 
-Use this to open the dashboard on **any computer**. It's hosted for free on Cloudflare and locked behind a sign-in.
+This turns Whatsup into a normal website that you can open on **any computer or tablet**:
+- You **sign in with Google**, and the app reads your calendar from your own account.
+- You can **install it** so it opens in its own window, like an app.
+- It's hosted for free on Cloudflare.
 
-**Time:** about 30–40 minutes, once.
-**You need:** your Google account, a free Cloudflare account, and Google Chrome on each Mac.
-**You don't need:** Terminal skills, Python, Node, or admin rights.
+**Time:** about 30 minutes, once. Everything is done in a web browser, apart from one optional Terminal command.
+**You need:** your Google account and a free Cloudflare account.
 
-## How it fits together
+## How it works
 
 ```
-Your Google Calendar ──(read-only, shared with a "robot" account)──┐
-Open-Meteo weather ────────────────────────────────────────────────┤
-                                                                   ▼
-                        Cloudflare Worker  ── locked by Cloudflare Access sign-in
-                                                                   │
-                         any Mac / browser ◀──────────────────────┘
+ your browser ──► "Sign in with Google" ──► Google asks: allow Whatsup to see your calendars (read-only)?
+      │                                                        │
+      ▼                                                        ▼
+ Whatsup (Cloudflare) ◄──── keeps you signed in (encrypted cookie) ── reads today's events
 ```
 
-- **Calendar:** read with Google's Calendar API by a **robot account** (Google calls it a *service account*).
-  - You share your family calendar with it as **read-only**. It can't see anything you don't share.
-- **Sign-in:** **Cloudflare Access** decides who can open the page. Only email addresses you list get in.
-  - You get in by typing a one-time code that Cloudflare emails you.
-  - The Worker checks the sign-in again itself. If Access is ever switched off, the page locks instead of opening up.
-- **Private settings:** your calendar ID, robot key, location and cameras are stored as **encrypted secrets in Cloudflare**.
-  - None of it is in the GitHub repo, which is public.
+- **Who can get in:** only Google accounts on **your list** (`allowed_emails`). Anyone else is turned away, and their Google permission is revoked straight away.
+- **What it can do:** read your calendars and your email address. It **can't change** anything, and it can't see your Gmail, Drive or photos.
+- **Staying signed in:** each browser stays signed in for 6 months in an encrypted cookie. The page's own code can't read it.
+  - **Sign out** in the app ends it and removes the app's access in your Google account.
+- **Your settings** (your list of accounts, calendar IDs, location, cameras) are stored as **encrypted secrets in Cloudflare**, not in the public GitHub repo.
 
 ---
 
-## Part A — Google: create the robot account (10 min)
+## Part A — Put it on Cloudflare (5 min)
 
-1. Go to <https://console.cloud.google.com> and sign in with your Google account.
-2. **Create a project.** Click the project picker at the top → **New project** → name it `family-dashboard` → **Create**. Make sure it's selected.
-3. **Turn on the Calendar API.** In the search bar type **Google Calendar API**, open it, click **Enable**.
-4. **Create the robot account.**
-   - Menu → **IAM & Admin → Service accounts** → **Create service account**.
-   - Name: `whatsup-dashboard` → **Create and continue**.
-   - Skip the optional role and access steps (it needs **no** roles) → **Done**.
-5. **Download its key.**
-   - Click the new account → **Keys** tab → **Add key → Create new key → JSON → Create**.
-   - A `.json` file downloads. **Treat it like a password.** You'll paste it into Cloudflare in Part B, then delete it.
-6. **Copy the robot's email address.** It's shown on the service accounts page and ends in `.iam.gserviceaccount.com`.
-
-### Share your calendar with the robot
-
-7. Open [Google Calendar](https://calendar.google.com) → gear → **Settings**.
-8. On the left, click the calendar to show. Your own calendar is listed under your name.
-9. **Share with specific people or groups** → **Add people** → paste the robot's email.
-   - Permission: **See all event details** → **Send**.
-   - Events you mark **Private** in Google still show only as "Busy".
-10. Scroll to **Integrate calendar** and copy the **Calendar ID**.
-    - For your main calendar, it's your Gmail address.
-    - Other calendars look like `abc123@group.calendar.google.com`.
-
-Repeat 8–10 for each family calendar you want on the screen. **Don't share work calendars.**
-
----
-
-## Part B — Cloudflare: put it online (15 min)
-
-### 1. Create a free account
-
-Sign up at <https://dash.cloudflare.com/sign-up> and verify your email.
-
-### 2. Deploy from GitHub
-
-1. In the dashboard: **Workers & Pages → Create → Import a repository** (it may say *Connect to Git*).
-2. Connect your GitHub account and pick **wackyclaude/whatsup**.
-3. Settings:
+1. Sign up at <https://dash.cloudflare.com/sign-up> (free) and verify your email.
+2. Go to **Workers & Pages → Create → Import a repository** (it may say *Connect to Git*).
+3. Connect GitHub and pick **wackyclaude/whatsup**.
+4. Settings:
    - **Project name:** `whatsup`
    - **Root directory:** `cloud` (under *Advanced* / *Build settings*)
    - **Deploy command:** leave as `npx wrangler deploy`
-4. **Deploy.** After a minute you get an address like `https://whatsup.<your-name>.workers.dev`.
+5. **Deploy.** You get an address like `https://whatsup.<your-name>.workers.dev`. **Copy it** — you need it in Part B.
 
-Opening it now shows *"This dashboard is locked until Cloudflare Access is set up."* That's expected: it stays locked until step 3.
+If you open it now, it shows a sign-in page saying setup isn't finished. That's expected.
 
-### 3. Lock it with Cloudflare Access
+---
 
-1. Open the Worker → **Settings → Domains & Routes**.
-2. Next to **workers.dev**, click **Enable Cloudflare Access**.
-   - The first time, Cloudflare asks you to create a **Zero Trust team**. Pick a team name and choose the **Free** plan.
-   - Cloudflare asks for payment details even on the Free plan, but you won't be charged.
-3. A box appears with two values. Copy both somewhere for step 4:
-   - **Team domain**, like `yourteam.cloudflareaccess.com`
-   - **Audience (AUD)**, a long string of letters and numbers
-4. Click **Manage Cloudflare Access** and edit the policy so **only your family** gets in:
-   - **Include → Emails:** your Gmail address, and your partner's if wanted.
-   - **Session duration:** the longest option, so screens don't ask for a code too often.
-5. Save.
+## Part B — Let it sign in with Google (10 min)
 
-### 4. Add the settings
+1. Go to <https://console.cloud.google.com> and sign in.
+2. **Create a project:** project picker at the top → **New project** → name it `whatsup` → **Create**. Make sure it's selected.
+3. **Turn on the Calendar API:** search for **Google Calendar API** → **Enable**.
+4. **Describe your app:** search for **Google Auth Platform** → **Get started**.
+   - App name: `Whatsup Family Dashboard`
+   - Support email: your Gmail
+   - Audience: **External**
+   - Contact email: your Gmail
+   - Agree → **Create**.
+5. **Ask for calendar access only:** Google Auth Platform → **Data access** → **Add or remove scopes**.
+   - Search `calendar.readonly`, tick **…/auth/calendar.readonly** (*See and download any calendar you can access*).
+   - **Update** → **Save**.
+6. **Create the sign-in client:** Google Auth Platform → **Clients** → **Create client**.
+   - Application type: **Web application**, name: `Whatsup`.
+   - **Authorized redirect URIs → Add URI:** your Cloudflare address plus `/auth/callback`, for example
+     `https://whatsup.<your-name>.workers.dev/auth/callback`
+   - **Create.** Copy the **Client ID** and the **Client secret** now. Google shows the secret only once.
+7. **Publish it, so you don't get signed out every week:** Google Auth Platform → **Audience** → **Publish app** → Confirm.
+   - While an app is in *Testing*, Google ends its sign-ins after 7 days.
+   - Published is fine for a personal app. Google doesn't need to review it for a family this size.
 
-In the Worker → **Settings → Variables and Secrets → Add**, add these four:
+> When you sign in, Google will say **"Google hasn't verified this app"**. That's normal for a
+> personal app you made yourself. Click **Advanced → Go to Whatsup Family Dashboard**.
+> Google then lists exactly what the app asks for: your calendars (read-only) and your email address.
+
+---
+
+## Part C — Add the settings in Cloudflare (10 min)
+
+### 1. Make a random session key
+
+This key encrypts the sign-in cookie. Open **Terminal** on your Mac and run:
+
+```bash
+openssl rand -base64 32
+```
+
+Copy the line it prints. If you'd rather not use Terminal, a password manager's "generate password" (40+ characters) works too.
+
+### 2. Find your calendar IDs
+
+- `"primary"` means **the main calendar of whoever is signed in**. For your own calendar, that's all you need.
+- **For a shared family calendar:** in [Google Calendar](https://calendar.google.com) → gear → **Settings** → click the calendar → **Integrate calendar** → copy the **Calendar ID**. It looks like `abc123@group.calendar.google.com`.
+  - Everyone who'll sign in needs access to that calendar in Google.
+
+### 3. Add the four settings
+
+In Cloudflare: your Worker → **Settings → Variables and Secrets → Add**:
 
 | Name | Type | Value |
 |---|---|---|
-| `TEAM_DOMAIN` | Text | the Team domain from step 3 |
-| `POLICY_AUD` | Text | the Audience (AUD) from step 3 |
-| `GOOGLE_SERVICE_ACCOUNT` | **Secret** | the whole robot key file from Part A step 5. Open it in TextEdit, select all, copy, paste. |
-| `WHATSUP_CONFIG` | **Secret** | your settings (template below) |
+| `GOOGLE_CLIENT_ID` | Text | Client ID from Part B |
+| `GOOGLE_CLIENT_SECRET` | **Secret** | Client secret from Part B |
+| `SESSION_SECRET` | **Secret** | the random key from step 1 |
+| `WHATSUP_CONFIG` | **Secret** | your settings (below) |
 
-`WHATSUP_CONFIG` template. Replace the calendar ID, add a line per calendar, and keep the commas between entries:
+`WHATSUP_CONFIG`. Change the email addresses and calendar ID, and keep the commas and quotes exactly:
 
 ```json
 {
-  "location": { "name": "Groningen", "latitude": 53.2194, "longitude": 6.5665, "timezone": "Europe/Amsterdam" },
+  "allowed_emails": ["you@gmail.com", "partner@gmail.com"],
   "calendars": [
-    { "name": "Family", "calendar_id": "PASTE-CALENDAR-ID", "color": "#6AA9FF", "show_details": true }
+    { "name": "Mine", "calendar_id": "primary", "color": "#6AA9FF" },
+    { "name": "Family", "calendar_id": "PASTE-FAMILY-CALENDAR-ID", "color": "#5ED39A" }
   ],
+  "location": { "name": "Groningen", "latitude": 53.2194, "longitude": 6.5665, "timezone": "Europe/Amsterdam" },
   "cameras": [
     { "name": "Golden Temple", "place": "Amritsar", "youtube_video_id": "" }
   ],
@@ -115,61 +116,38 @@ In the Worker → **Settings → Variables and Secrets → Add**, add these four
 }
 ```
 
-- **Colours** to pick from: `#6AA9FF` blue, `#5ED39A` green, `#FF9F43` orange, `#FF7A90` pink, `#B9A7FF` purple.
-- **`show_details: false`** shows every event from that calendar as "Busy".
-- **Cameras:** open the live stream on YouTube. The ID is the 11 characters after `v=` in the address. A camera with an empty ID is hidden.
-- **`month_system`:** `purnimanta` (North India) or `amanta`.
+- **Smallest working version:** `{ "allowed_emails": ["you@gmail.com"] }`. That shows your own calendar in Groningen.
+- **Don't need a shared family calendar?** Delete the `"Family"` line, and the comma before it.
+- **Colours:** `#6AA9FF` blue, `#5ED39A` green, `#FF9F43` orange, `#FF7A90` pink, `#B9A7FF` purple.
+- **`"show_details": false`** on a calendar shows its events as "Busy". Events you mark Private in Google always show as "Busy".
+- **Cameras:** open a live stream you trust on YouTube. The ID is the 11 characters after `v=` in the address. A camera with an empty ID is hidden.
 
-Click **Deploy** (or *Save and deploy*). Then **delete the downloaded key file** and empty the Trash.
-
-### 5. Open it
-
-Go to `https://whatsup.<your-name>.workers.dev`.
-1. Cloudflare asks for your email and sends a code.
-2. Enter the code and you see the dashboard.
-
-If something isn't set up right, the top-right corner says **Settings: …** with what's missing.
+Click **Deploy** (or *Save and deploy*).
 
 ---
 
-## Part C — show it on a Mac when it's idle (5 min per Mac)
+## Part D — Sign in and install it (2 min per device)
 
-A Mac screensaver can't show a sign-in page. Instead, a small helper opens the dashboard full-screen after a few idle minutes and closes it the moment someone touches the keyboard or mouse.
+1. Open `https://whatsup.<your-name>.workers.dev`.
+2. Click **Sign in with Google**. Pick your account, click **Advanced → Go to…**, and tick the calendar permission → **Continue**.
+3. You see the dashboard.
 
-- It uses **its own Chrome profile**, so your normal browsing and Google sign-ins aren't involved.
-- It doesn't open on a locked screen, during **quiet hours** (default 22:00–07:00), or while another app is keeping the screen on (a film, a presentation).
-- After it has shown for a while (default **60 minutes**), it closes and puts the display to sleep. That lets the Mac's normal screen lock take over. It reopens only after someone has used the Mac and left it idle again.
+**Install it as an app:**
 
-1. Install **Google Chrome** if the Mac doesn't have it.
-2. On <https://github.com/wackyclaude/whatsup>: **Code → Download ZIP**. Unzip it.
-3. Make a folder called **Apps** in your home folder and move the unzipped folder into it as **whatsup**.
-   - Not Documents, Desktop or Downloads: macOS blocks background helpers there.
-4. Open **Terminal** and run:
+- **Chrome (any Mac, including the 2017 MacBook Pro):**
+  - Click the **install icon** at the right end of the address bar.
+  - Or use **⋮ menu → Cast, save and share → Install page as app…**
+  - Whatsup then opens in its own window and appears in Launchpad and the Dock.
+- **Safari 17 or newer (macOS Sonoma and later):** **File → Add to Dock**.
+  - The 2017 MacBook Pro can't run Sonoma, so use Chrome there.
+- **iPad / iPhone (Safari):** **Share → Add to Home Screen**.
 
-   ```bash
-   bash ~/Apps/whatsup/scripts/idle/install.sh
-   ```
+For a wall-display feel, open the app and press **Control-Command-F** for full screen.
 
-   - Paste your dashboard address.
-   - Choose the idle minutes, how long it shows, and quiet hours (press Enter for the defaults).
-5. A Chrome window opens. Sign in once with your email code, check the dashboard shows, then close the window.
-
-That's it. To open it yourself any time (e.g. to switch cameras):
-
-```bash
-bash ~/Apps/whatsup/scripts/idle/open.sh
-```
-
-To turn it off: `bash ~/Apps/whatsup/scripts/idle/uninstall.sh`. Add `--purge` to also sign that Mac out.
-
-> **Important — the Mac is unlocked while the dashboard shows.** It's just a full-screen window:
-> anyone who touches the Mac gets the normal desktop. The live camera also stops macOS's own
-> screensaver and display-sleep from starting while it plays.
->
-> To keep things safe:
-> - In **System Settings → Lock Screen**, set *Require password after screen saver begins or display is turned off* to **Immediately**.
->   Once the dashboard's show time ends and the display sleeps, the Mac then locks.
-> - Ideally, run the dashboard under a separate **standard (non-admin) macOS user** for the family, so a child who touches it doesn't land in your account.
+> **On a shared family computer:** signing in also signs that browser into your Google account.
+> The dashboard doesn't need that afterwards. Once it shows, you can sign out of Google in that
+> browser (avatar at google.com → *Sign out*), and the dashboard stays signed in.
+> Or sign in from a separate browser profile used only for the dashboard.
 
 ---
 
@@ -177,35 +155,35 @@ To turn it off: `bash ~/Apps/whatsup/scripts/idle/uninstall.sh`. Add `--purge` t
 
 | To… | Do this |
 |---|---|
-| Change calendars, location, cameras | Cloudflare → Worker → Settings → Variables and Secrets → edit `WHATSUP_CONFIG` → Deploy |
-| Add or remove a person who can sign in | Cloudflare Zero Trust → Access → Applications → whatsup → Policies |
-| Update to the latest version | Nothing — Cloudflare redeploys automatically when the GitHub repo changes |
-| Change idle time / show time / quiet hours on a Mac | run `bash ~/Apps/whatsup/scripts/idle/install.sh` again |
+| Add a person who can sign in | Add their Gmail to `allowed_emails` in `WHATSUP_CONFIG` → Deploy |
+| Remove a person | Remove them from `allowed_emails` → Deploy. They're signed out everywhere on their next page load |
+| Change calendars, location, cameras | Edit `WHATSUP_CONFIG` → Deploy |
+| Sign everyone out at once | Change `SESSION_SECRET` to a new random value → Deploy |
+| Sign one device out | **Sign out** (top right of the dashboard) |
+| Update to the latest version | Nothing. Cloudflare redeploys automatically when the repo changes |
 | See errors | Cloudflare → Worker → **Logs** |
 
 ## If something goes wrong
 
-- **"Settings: WHATSUP_CONFIG is not valid JSON"** — a comma or quote is missing. Paste it into <https://jsonlint.com> to find the spot.
-- **"not shared with the dashboard's robot account yet"** — redo Part A steps 7–9 for that calendar. Check you copied the right Calendar ID.
-- **"Google sign-in failed"** — the `GOOGLE_SERVICE_ACCOUNT` secret isn't the complete key file. Paste it again.
-- **"Not authorised"** — you opened the page without signing in, or your email isn't in the Access policy.
-- **The idle helper doesn't open** — look at `~/Library/Logs/whatsup/idle.log`.
+- **The sign-in page says setup isn't finished** — it lists which of the four settings is missing.
+- **Google says `redirect_uri_mismatch`** — the address in Part B step 6 must be exactly your Cloudflare address plus `/auth/callback`. Google can take a few minutes to pick up a change.
+- **"That Google account isn't on this dashboard's list"** — add it to `allowed_emails` (lower-case is fine).
+- **"Please tick the See your calendars box"** — sign in again and tick the calendar permission.
+- **A calendar shows "not found in your Google account"** — the person signed in can't see that calendar, or the Calendar ID is wrong.
+- **Top right says "Settings: …"** — something in `WHATSUP_CONFIG` needs fixing. For "not valid JSON", paste it into <https://jsonlint.com> to find the missing comma or quote.
 
-## Undo / revoke access
+## Undo / revoke
 
-- **Stop the robot reading a calendar:** remove it under that calendar's *Share with specific people*.
-- **Kill the robot's key:** Google Cloud → Service accounts → whatsup-dashboard → Keys → delete.
-- **Take the site offline:** Cloudflare → Worker → Settings → delete the Worker.
+- **Remove the app's access to your Google account:** <https://myaccount.google.com/permissions> → Whatsup → *Delete all connections*.
+- **Take the site offline:** Cloudflare → Worker → Settings → Delete.
 
-## Protect the GitHub side too
+## Protect the GitHub side
 
-Cloudflare redeploys whatever is pushed to the repo's `main` branch. Whoever can push there can change what the site does, including reading the calendar.
+Cloudflare redeploys whatever is pushed to the repo's `main` branch.
 - Turn on **two-factor authentication** for your GitHub account.
 - Don't give others write access to the repo.
-- Optional: in the repo, **Settings → Branches → Add rule** for `main` and require pull requests.
 
 ## Costs
 
-- **Cloudflare:** a family dashboard stays well within the free tier, which allows 100,000 requests a day. Each open screen uses about 1,000.
-- **Cloudflare Access:** free for small teams.
-- **Google Calendar API and Open-Meteo:** free at this scale.
+- **Cloudflare:** free. The free tier allows 100,000 requests a day, and one open dashboard uses about 1,000.
+- **Google Calendar API and Open-Meteo weather:** free at this scale.

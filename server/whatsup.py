@@ -658,6 +658,7 @@ def serve(cfg: Dict[str, Any], cache_path: Path, demo: bool) -> None:
     Handler.settings = public_settings(cfg)
     Handler.allowed_hosts = {"127.0.0.1:%d" % port, "localhost:%d" % port}
     mimetypes.add_type("application/javascript", ".js")
+    mimetypes.add_type("application/manifest+json", ".webmanifest")
 
     if not demo:
         threading.Thread(target=store.run_forever, name="refresher", daemon=True).start()

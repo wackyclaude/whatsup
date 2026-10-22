@@ -12,17 +12,16 @@ A calm, kid-friendly screen for the family MacBook. It runs as a **screensaver**
 
 ## Two ways to run it
 
-| | **Online (recommended)** | **On one Mac only** |
+| | **Web app (recommended)** | **On one Mac only** |
 |---|---|---|
-| Works on | any computer, any browser | the Mac it's installed on |
-| Calendar | your Google Calendar via a read-only robot account | your Google Calendar's secret iCal address |
-| Who can open it | only emails you approve (Cloudflare Access sign-in) | only that Mac |
-| Shows when idle | small helper opens it full-screen in Chrome | macOS screensaver |
-| Setup | browser only: Google Cloud + Cloudflare, ~40 min | Terminal, ~15 min |
+| Open it on | any computer, tablet or phone; installable as an app | the Mac it's installed on |
+| Sign-in | **Sign in with Google** — only accounts on your list | none needed (only that Mac can see it) |
+| Calendar | read from your own Google account (read-only) | your Google Calendar's secret iCal address |
+| Setup | in a browser: Cloudflare + Google, ~30 min | Terminal, ~15 min |
 | Cost | free | free |
 
-- **Online:** follow **[docs/HOSTING.md](docs/HOSTING.md)**.
-- **One Mac only:** carry on below.
+- **Web app:** follow **[docs/HOSTING.md](docs/HOSTING.md)**.
+- **One Mac only** (also works as a macOS screensaver): carry on below.
 
 ---
 
@@ -178,11 +177,10 @@ Festival dates are in `config/festivals.json`. They're checked against published
 ## For developers
 
 ```
-cloud/                hosted version: Cloudflare Worker (src/), tests (npm test, npm run test:runtime)
-scripts/idle/         Mac helper that opens the hosted dashboard when idle (tests/test_idle.sh)
+cloud/                web app: Cloudflare Worker with Google sign-in (src/); tests: npm test, npm run test:runtime
+static/               the page, shared by both versions (+ sign-in page, manifest, icons, service worker)
 server/whatsup.py     local server: calendar + weather fetch, cache, JSON API (Python 3.9+, stdlib + 2 deps)
 server/configure.py   guided settings changes
-static/               the page (HTML/CSS, ES modules, vendored libraries)
 config/               example settings + festival list
 scripts/              install, configure, check, demo, open-app, uninstall
 tests/                python -m unittest discover tests  ·  TZ=Europe/Amsterdam node tests/test_sky.mjs

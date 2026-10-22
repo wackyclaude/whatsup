@@ -44,8 +44,22 @@ export function loadConfig(raw) {
   }
   loc.name = String(loc.name || '').slice(0, 40);
 
+  // Google accounts allowed to sign in. Empty = nobody (fail closed).
+  const allowed = [];
+  (Array.isArray(input.allowed_emails) ? input.allowed_emails : []).forEach((e) => {
+    const v = String(e || '').trim().toLowerCase();
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) allowed.push(v);
+    else problems.push(`allowed_emails has an invalid address: "${String(e).slice(0, 60)}"`);
+  });
+  if (!allowed.length && !problems.some((p) => p.startsWith('WHATSUP_CONFIG'))) {
+    problems.push('allowed_emails is empty — add your Google address');
+  }
+
   const calendars = [];
-  (Array.isArray(input.calendars) ? input.calendars : []).forEach((c, i) => {
+  const calInput = Array.isArray(input.calendars) && input.calendars.length
+    ? input.calendars
+    : [{ name: 'My calendar', calendar_id: 'primary', color: '#6AA9FF' }];
+  calInput.forEach((c, i) => {
     const id = String((c && c.calendar_id) || '').trim();
     if (!id || id.includes('PASTE')) {
       problems.push(`calendars[${i}] has no calendar_id`);
@@ -83,6 +97,7 @@ export function loadConfig(raw) {
 
   return {
     config: {
+      allowed_emails: allowed,
       location: loc,
       calendars,
       cameras,
@@ -97,10 +112,11 @@ export function loadConfig(raw) {
   };
 }
 
-export function publicSettings(config, festivals, problems, version) {
+export function publicSettings(config, festivals, problems, version, email) {
   return {
     version,
     mode: 'cloud',
+    signed_in_as: email || null,
     location: config.location,
     panchang: config.panchang,
     cameras: config.cameras,
