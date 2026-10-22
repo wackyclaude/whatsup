@@ -1,6 +1,8 @@
 // Reads and checks the WHATSUP_CONFIG secret. Personal settings live only
 // in Cloudflare (as an encrypted secret), never in the public repo.
 
+import { SOURCES, DEFAULT_SOURCES } from './news.js';
+
 const HEX = /^#[0-9A-Fa-f]{6}$/;
 const YT_VIDEO = /^[A-Za-z0-9_-]{11}$/;
 const YT_CHANNEL = /^UC[A-Za-z0-9_-]{22}$/;
@@ -99,6 +101,20 @@ export function loadConfig(raw) {
     });
   });
 
+  // Kids' news: only sources from the fixed list; "news": false turns it off
+  const newsIn = input.news === undefined ? {} : input.news;
+  const news = { enabled: newsIn !== false, sources: [...DEFAULT_SOURCES], block_words: [] };
+  if (newsIn && typeof newsIn === 'object') {
+    if (Array.isArray(newsIn.sources)) {
+      news.sources = newsIn.sources.map(String).filter((id) => {
+        if (SOURCES[id]) return true;
+        problems.push(`news.sources: "${id.slice(0, 40)}" isn't a known kids' news source`);
+        return false;
+      });
+    }
+    if (Array.isArray(newsIn.block_words)) news.block_words = newsIn.block_words.map((w) => String(w).toLowerCase().slice(0, 40)).filter(Boolean);
+  }
+
   const system = (input.panchang && input.panchang.month_system) === 'amanta' ? 'amanta' : 'purnimanta';
   const rotate = Math.max(0, Math.min(240, Number(input.camera_rotate_minutes) || 0));
   const refresh = input.refresh_minutes || {};
@@ -112,6 +128,7 @@ export function loadConfig(raw) {
       hide_calendars: hideCalendars,
       busy_calendars: busyCalendars,
       cameras,
+      news,
       panchang: { month_system: system },
       camera_rotate_minutes: rotate,
       refresh_minutes: {
@@ -132,6 +149,7 @@ export function publicSettings(config, festivals, problems, version, email) {
     panchang: config.panchang,
     cameras: config.cameras,
     camera_rotate_minutes: config.camera_rotate_minutes,
+    news_enabled: config.news.enabled && config.news.sources.length > 0,
     festivals,
     problems,
   };

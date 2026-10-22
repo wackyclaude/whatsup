@@ -138,6 +138,11 @@ In Cloudflare: your Worker → **Settings → Variables and Secrets → Add**:
 - **Smallest working version:** `{ "allowed_emails": ["you@gmail.com"] }`. That shows all your ticked calendars, with Groningen weather.
 - **Events you mark Private** in Google always show as "Busy".
 - **Cameras:** open a live stream you trust on YouTube. The ID is the 11 characters after `v=` in the address. A camera with an empty ID is hidden.
+- **Wide screens** (wider than 16:10, e.g. a 16:9 monitor or TV) get an extra column on the left: *Tonight's sky* and *Kids' news*. The 16:10 MacBook screen keeps the normal layout.
+  - Kids' news shows headlines only (no photos, no links) from NOS Jeugdjournaal and BBC Newsround, with a word filter on top. It updates every 30 minutes.
+  - Only one source: `"news": { "sources": ["nos-jeugdjournaal"] }` (or `"bbc-newsround"`).
+  - Hide more headlines: `"news": { "block_words": ["voetbal"] }`.
+  - Turn it off: `"news": false`.
 - **Prefer a fixed list instead?** Replace the hide/busy lines with:
   `"calendars": [ { "name": "School", "calendar_id": "PASTE-ID", "color": "#5ED39A" } ]`
   - The Calendar ID is in Google Calendar → Settings → that calendar → **Integrate calendar**.

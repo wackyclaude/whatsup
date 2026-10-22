@@ -287,3 +287,113 @@ export function paranaWindow(ekadashiDay, lat, lon) {
   if (end <= start) end = new Date(Math.min(dEnd, start.getTime() + 2 * 3600000)); // short Dwadashi: as soon as allowed
   return { start, end: end > start ? end : null, day: nextDay };
 }
+
+// ---------------------------------------------------------------- tonight's sky
+
+const PLANETS = ['Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn'];
+const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+// Peak nights (month 1-12, day) of the yearly meteor showers worth staying up for.
+const METEOR_SHOWERS = [
+  { name: 'Quadrantids', month: 1, day: 3, perHour: 80 },
+  { name: 'Lyrids', month: 4, day: 22, perHour: 18 },
+  { name: 'Eta Aquariids', month: 5, day: 6, perHour: 30 },
+  { name: 'Perseids', month: 8, day: 12, perHour: 100 },
+  { name: 'Orionids', month: 10, day: 21, perHour: 20 },
+  { name: 'Leonids', month: 11, day: 17, perHour: 15 },
+  { name: 'Geminids', month: 12, day: 14, perHour: 120 },
+];
+
+const compass = (az) => COMPASS[Math.round(norm(az) / 45) % 8];
+
+function brightness(mag) {
+  if (mag < -3) return 'very bright';
+  if (mag < -1) return 'bright';
+  if (mag < 1) return 'easy to see';
+  return 'faint';
+}
+
+function skyPosition(body, date, observer) {
+  const eq = Astronomy.Equator(body, date, observer, true, true);
+  const hor = Astronomy.Horizon(date, observer, eq.ra, eq.dec, 'normal');
+  return { alt: hor.altitude, az: hor.azimuth };
+}
+
+function planetsAt(date, observer, when) {
+  const sunAlt = skyPosition('Sun', date, observer).alt;
+  if (sunAlt > -6) return [];
+  const out = [];
+  for (const name of PLANETS) {
+    const { alt, az } = skyPosition(name, date, observer);
+    const mag = Astronomy.Illumination(name, date).mag;
+    if (alt < 8 || mag > 1.6) continue;
+    out.push({ name, when, alt: Math.round(alt), dir: compass(az), mag: Math.round(mag * 10) / 10, bright: brightness(mag) });
+  }
+  return out.sort((a, b) => a.mag - b.mag);
+}
+
+/**
+ * What a family can see in the sky tonight from (lat, lon):
+ * planets in the evening (an hour after sunset, or now if later) and
+ * before dawn, a meteor shower near its peak, and upcoming eclipses
+ * that are visible from here.
+ */
+export function tonightsSky(now, lat, lon) {
+  const observer = new Astronomy.Observer(lat, lon, 0);
+  const today = sunTimes(now, lat, lon);
+  const tomorrow = sunTimes(addDays(now, 1), lat, lon);
+  let evening = null;
+  let dawn = null;
+  if (today.rise && now < today.rise) {
+    // small hours: the night has already started
+    evening = now;
+    dawn = new Date(today.rise.getTime() - 75 * 60000);
+  } else if (today.set && tomorrow.rise) {
+    const after = new Date(today.set.getTime() + 60 * 60000);
+    evening = now > after ? now : after;
+    dawn = new Date(tomorrow.rise.getTime() - 75 * 60000);
+  }
+  const planets = [];
+  if (evening) planets.push(...planetsAt(evening, observer, evening === now ? 'now' : 'evening'));
+  if (dawn) {
+    const seen = new Set(planets.map((p) => p.name));
+    planets.push(...planetsAt(dawn, observer, 'dawn').filter((p) => !seen.has(p.name)));
+  }
+  return { evening, dawn, planets, meteors: meteorShower(now), eclipses: eclipses(now, observer) };
+}
+
+/** A meteor shower whose peak is 2 days ago up to 10 days ahead, or null. */
+export function meteorShower(now) {
+  const y = now.getFullYear();
+  for (const s of METEOR_SHOWERS) {
+    for (const year of [y - 1, y, y + 1]) {
+      const peak = new Date(year, s.month - 1, s.day, 23, 0, 0);
+      const days = Math.round((peak - now) / DAY_MS);
+      if (days < -2 || days > 10) continue;
+      const moon = SunCalc.getMoonIllumination(peak).fraction;
+      return { name: s.name, peak, perHour: s.perHour, days, brightMoon: moon > 0.5 };
+    }
+  }
+  return null;
+}
+
+/** Up to two eclipses in the next 18 months that can be seen from here. */
+export function eclipses(now, observer, months = 18) {
+  const until = addDays(now, months * 30.5);
+  const out = [];
+  let lunar = Astronomy.SearchLunarEclipse(now);
+  while (lunar.peak.date < until) {
+    // penumbral eclipses are too faint for most people to notice
+    if (lunar.kind !== 'penumbral' && skyPosition('Moon', lunar.peak.date, observer).alt > 0) {
+      out.push({ kind: 'lunar', type: lunar.kind, date: lunar.peak.date });
+    }
+    lunar = Astronomy.NextLunarEclipse(lunar.peak);
+  }
+  let solar = Astronomy.SearchLocalSolarEclipse(now, observer);
+  while (solar.peak.time.date < until) {
+    if (solar.peak.altitude > 0 && solar.obscuration > 0.05) {
+      out.push({ kind: 'solar', type: solar.kind, date: solar.peak.time.date, covered: Math.round(solar.obscuration * 100) });
+    }
+    solar = Astronomy.NextLocalSolarEclipse(solar.peak.time, observer);
+  }
+  return out.sort((a, b) => a.date - b.date).slice(0, 2);
+}

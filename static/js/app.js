@@ -9,6 +9,7 @@ const params = new URLSearchParams(location.search);
 const MODE = params.get('mode') === 'screensaver' ? 'screensaver' : 'app';
 const DATA_REFRESH_MS = 2 * 60 * 1000;
 const SKY_REFRESH_MS = 5 * 60 * 1000;
+const NEWS_REFRESH_MS = 30 * 60 * 1000;
 
 const state = { settings: null, data: null, camIndex: 0, camRendered: null, dayKey: null, festivals: null, festivalsDay: null };
 
@@ -39,11 +40,26 @@ function clear(node) {
 
 // ------------------------------------------------------------ stage scaling
 
+// The dashboard is designed at 1440 x 900 (16:10, the family MacBook).
+// On wider screens the stage grows sideways and a side column (tonight's
+// sky, kids' news) fills the room that would otherwise be empty margins.
+const BASE_W = 1440;
+const BASE_H = 900;
+const WIDE_MIN_W = 1736; // narrowest stage that has room for the side column
+
 function fitStage() {
   const stage = $('stage');
-  const scale = Math.min(window.innerWidth / 1440, window.innerHeight / 900);
-  const left = (window.innerWidth - 1440 * scale) / 2;
-  const top = (window.innerHeight - 900 * scale) / 2;
+  const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+  const wide = aspect >= 1.7;
+  const w = wide ? Math.max(WIDE_MIN_W, Math.round(aspect * BASE_H)) : BASE_W;
+  stage.classList.toggle('wide', wide);
+  stage.style.width = `${w}px`;
+  const wasHidden = $('side').hidden;
+  $('side').hidden = !wide;
+  if (wide && wasHidden && state.settings) loadNews(); // the side column just appeared
+  const scale = Math.min(window.innerWidth / w, window.innerHeight / BASE_H);
+  const left = (window.innerWidth - w * scale) / 2;
+  const top = (window.innerHeight - BASE_H * scale) / 2;
   stage.style.transform = `translate(${left}px, ${top}px) scale(${scale})`;
 }
 
@@ -162,6 +178,7 @@ function renderSky() {
   const { latitude: lat, longitude: lon, name } = s.location;
   const now = new Date();
   $('pill-place').textContent = name;
+  renderTonight(now, lat, lon);
 
   const sun = Sky.sunTimes(now, lat, lon);
   $('sun-rise').textContent = hm(sun.rise);
@@ -507,6 +524,109 @@ function renderCamTime() {
   }
 }
 
+// ------------------------------------------------------------ tonight's sky
+
+const PLANET_COLOURS = { Mercury: '#C9D3DC', Venus: '#FFF4D6', Mars: '#FF8A65', Jupiter: '#FFE0A8', Saturn: '#F3D58A' };
+const NIGHT_GROUPS = { now: 'Up right now', evening: 'This evening', dawn: 'Before sunrise' };
+const ECLIPSE_NAMES = {
+  partial: 'Partial', total: 'Total', annular: 'Annular',
+};
+
+function renderTonight(now, lat, lon) {
+  let t;
+  try {
+    t = Sky.tonightsSky(now, lat, lon);
+  } catch (e) {
+    return;
+  }
+  $('night-when').textContent = t.evening && t.evening > now ? `from ${hm(t.evening)}` : '';
+  const list = clear($('night-list'));
+  let group = null;
+  for (const p of t.planets) {
+    if (p.when !== group) {
+      group = p.when;
+      list.append(el('li', 'night-group', group === 'dawn' ? `${NIGHT_GROUPS.dawn} · ${hm(t.dawn)}` : NIGHT_GROUPS[group]));
+    }
+    const li = el('li', 'night-item');
+    const dot = el('span', 'night-dot');
+    dot.style.color = PLANET_COLOURS[p.name];
+    const text = el('div', 'night-text');
+    text.append(el('span', 'night-name', p.name), el('span', 'night-meta', `Look ${p.dir}, ${p.alt < 20 ? 'low' : p.alt < 50 ? 'half way up' : 'high up'} · ${p.bright}`));
+    li.append(dot, text);
+    list.append(li);
+  }
+  if (!t.planets.length) list.append(el('li', 'empty', 'No bright planets tonight. Look for the Moon and stars!'));
+
+  const extra = clear($('night-extra'));
+  if (t.meteors) {
+    const m = t.meteors;
+    const when = m.days < 0 ? 'peaked ' + (m.days === -1 ? 'last night' : `${-m.days} nights ago`)
+      : m.days === 0 ? 'peaks tonight' : m.days === 1 ? 'peaks tomorrow night' : `peaks ${longDay(m.peak)}`;
+    const div = el('div', 'night-event');
+    div.append(el('b', '', `☄ ${m.name} meteor shower`), document.createTextNode(` ${when}, up to ${m.perHour} an hour in a dark spot.`));
+    if (m.brightMoon) div.append(el('span', 'note', 'The bright Moon will hide the fainter ones.'));
+    extra.append(div);
+  }
+  for (const e of t.eclipses) {
+    const div = el('div', 'night-event');
+    const date = e.date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    if (e.kind === 'lunar') {
+      div.append(el('b', '', `🌘 ${ECLIPSE_NAMES[e.type] || ''} lunar eclipse`), document.createTextNode(` · ${date}, ${hm(e.date)}`));
+    } else {
+      div.append(el('b', '', `🌞 ${ECLIPSE_NAMES[e.type] || ''} solar eclipse`), document.createTextNode(` · ${date}, ${hm(e.date)} · ${e.covered}% of the Sun covered`));
+      div.append(el('span', 'note', 'Never look at the Sun without eclipse glasses.'));
+    }
+    extra.append(div);
+  }
+}
+
+// ------------------------------------------------------------ kids' news
+
+function timeAgo(iso, now) {
+  if (!iso) return '';
+  const min = Math.round((now - new Date(iso)) / 60000);
+  if (min < 60) return `${Math.max(1, min)} min ago`;
+  if (min < 24 * 60) return `${Math.round(min / 60)} h ago`;
+  const days = Math.round(min / 1440);
+  return days === 1 ? 'yesterday' : `${days} days ago`;
+}
+
+function renderNews() {
+  const news = state.news;
+  const card = $('news-card');
+  if (!news || !news.enabled || !news.items) { card.hidden = true; return; }
+  card.hidden = false;
+  const now = new Date();
+  const list = clear($('news-list'));
+  for (const item of news.items) {
+    const li = el('li', 'news-item');
+    const meta = el('div', 'news-meta');
+    meta.append(el('span', item.lang === 'EN' ? 'chip en' : 'chip', item.lang), el('span', '', `${item.source} · ${timeAgo(item.published, now)}`));
+    li.append(el('div', 'news-title', item.title), meta);
+    list.append(li);
+  }
+  if (!news.items.length) list.append(el('li', 'empty', 'No headlines right now.'));
+  $('news-updated').textContent = news.updated ? `updated ${hm(new Date(news.updated))}` : '';
+  $('news-foot').textContent = news.errors && news.errors.length
+    ? `Not reachable just now: ${news.errors.map((x) => x.replace(/: unavailable$/, '')).join(', ')}`
+    : 'Headlines from children’s news services, checked every 30 minutes.';
+}
+
+async function loadNews() {
+  if (!isCloud() || state.settings.news_enabled === false) { renderNews(); return; }
+  if ($('side').hidden) return; // nothing to show it in on this screen
+  try {
+    const next = await getJSON('/api/news');
+    // keep the last good headlines if every source failed this time
+    if (!(next.items && next.items.length === 0 && state.news && state.news.items && state.news.items.length && next.errors && next.errors.length)) {
+      state.news = next;
+    }
+  } catch (e) {
+    // keep showing what we have
+  }
+  renderNews();
+}
+
 // ------------------------------------------------------------ data loading
 
 async function getJSON(url) {
@@ -585,6 +705,9 @@ async function start() {
   setInterval(renderClock, 10 * 1000);
   setInterval(loadData, DATA_REFRESH_MS);
   setInterval(renderSky, SKY_REFRESH_MS);
+  loadNews();
+  setInterval(loadNews, NEWS_REFRESH_MS);
+  setInterval(renderNews, SKY_REFRESH_MS); // keeps "20 min ago" current
 
   const rotate = Number(state.settings.camera_rotate_minutes || 0);
   if (MODE === 'screensaver' && rotate > 0 && state.settings.cameras.length > 1) {

@@ -3,8 +3,9 @@ import { loadConfig } from './config.js';
 import { fetchCalendars, listVisibleCalendars, dayKeyIn, CalendarAuthError } from './google.js';
 import { fetchWeather } from './weather.js';
 import { accessTokenFor, dropAccessToken, SignInError } from './oauth.js';
+import { fetchNews } from './news.js';
 
-export const VERSION = '2.1.0';
+export const VERSION = '2.2.0';
 
 // Best-effort memory cache per Worker instance. The page keeps showing its
 // last good data if a refresh fails, so a cold cache is harmless.
@@ -85,4 +86,26 @@ export function forgetUser(email) {
 export function _resetDataCache() {
   weatherEntry = null;
   calendarEntries.clear();
+}
+
+// Kids' news: shared by everyone, refreshed at most every 30 minutes.
+let newsEntry = null;
+export async function getNews(env, now = new Date(), fetchImpl = fetch) {
+  const { config } = loadConfig(env.WHATSUP_CONFIG);
+  if (!config.news.enabled) return { enabled: false, items: [] };
+  const fresh = newsEntry && now.getTime() - newsEntry.at < 30 * 60000;
+  if (!fresh) {
+    try {
+      const res = await fetchNews(config.news, fetchImpl);
+      if (res.items.length || !newsEntry) newsEntry = { ...res, at: now.getTime() };
+      else newsEntry = { ...newsEntry, errors: res.errors, at: now.getTime() };
+    } catch (e) {
+      newsEntry = newsEntry || { items: [], errors: ['news unavailable'], at: now.getTime() };
+    }
+  }
+  return { enabled: true, items: newsEntry.items, errors: newsEntry.errors, updated: new Date(newsEntry.at).toISOString() };
+}
+
+export function _resetNewsCache() {
+  newsEntry = null;
 }

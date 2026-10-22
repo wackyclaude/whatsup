@@ -17,6 +17,29 @@
 <body>
 <div id="stage" class="stage">
 
+  <!-- Side column: only on wide screens (see fitStage in js/app.js) -->
+  <aside id="side" class="side" hidden>
+    <section class="card card-night" aria-labelledby="night-h">
+      <div class="card-head">
+        <h2 id="night-h" class="label c-lavender">Tonight's sky</h2>
+        <span id="night-when" class="note"></span>
+      </div>
+      <ul id="night-list" class="night-list"></ul>
+      <div id="night-extra" class="night-extra"></div>
+    </section>
+
+    <section id="news-card" class="card card-news" aria-labelledby="news-h" hidden>
+      <div class="card-head">
+        <h2 id="news-h" class="label c-green">Kids' news</h2>
+        <span id="news-updated" class="note"></span>
+      </div>
+      <ul id="news-list" class="news-list"></ul>
+      <div id="news-foot" class="card-foot"></div>
+    </section>
+  </aside>
+
+  <div class="main-col">
+
   <header class="top">
     <div class="top-left">
       <div id="clock" class="clock">--:--</div>
@@ -201,6 +224,7 @@
       </div>
       <div id="cam-buttons" class="cam-buttons"></div>
     </section>
+  </div>
   </div>
 </div>
 </body>

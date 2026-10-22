@@ -3,7 +3,7 @@
 // Network first, so updates appear straight away. Never stores calendar or
 // weather data, or anything to do with signing in.
 
-const CACHE = 'whatsup-shell-v5';
+const CACHE = 'whatsup-shell-v6';
 const SHELL = [
   '/styles.css', '/js/app.js', '/js/sky.js', '/js/festivals.js', '/vendor/suncalc.js', '/vendor/astronomy.js',
   '/manifest.webmanifest', '/icons/icon-192.png', '/icons/favicon-32.png', '/img/moon.webp',

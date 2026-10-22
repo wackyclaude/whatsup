@@ -66,6 +66,17 @@ async function fakeNetwork(input, init = {}) {
       ],
     }));
   }
+  if (url.hostname === 'feeds.nos.nl' || url.hostname === 'feeds.bbci.co.uk') {
+    const nl = url.hostname === 'feeds.nos.nl';
+    const ago = (min) => new Date(Date.now() - min * 60000).toUTCString();
+    const titles = nl
+      ? [['Kinderen bouwen de hoogste Lego-toren van Nederland', 25], ['Bomaanslag in een stad ver weg', 40],
+        ['Waarom vallen de bladeren in de herfst?', 95], ['Nieuwe pinguïns in Wildlands Emmen', 200], ['Zo werkt de herfstvakantie', 400]]
+      : [['Scientists find a new species of glowing mushroom', 60], ['Two people killed in storm', 70],
+        ['How do hedgehogs get ready for winter?', 180], ['School wins award for its vegetable garden', 300]];
+    const items = titles.map(([t, m]) => `<item><title><![CDATA[${t}]]></title><pubDate>${ago(m)}</pubDate></item>`).join('');
+    return new Response(`<?xml version="1.0"?><rss version="2.0"><channel>${items}</channel></rss>`, { headers: { 'Content-Type': 'application/rss+xml' } });
+  }
   if (url.hostname === 'api.open-meteo.com') {
     calls.weather++;
     const times = [];
@@ -160,6 +171,13 @@ async function selftest(baseEnv) {
   check(results, 'local time labels', JSON.stringify(labels) === JSON.stringify(['07:45', '09:00', '15:30', '18:30']), labels);
   check(results, 'tokens and calendar ids never exposed', !/rt-parent|family-secret-id/.test(JSON.stringify(data) + JSON.stringify(settings)), 'leak');
   check(results, 'no extra Google token calls', calls.token === 1 && calls.refresh === 0, calls);
+  r = await get('/api/news');
+  check(results, '/api/news needs sign-in', r.status === 401, r.status);
+  r = await get('/api/news', auth);
+  const news = await r.json();
+  const headlines = (news.items || []).map((i) => i.title).join(' | ');
+  check(results, 'kids news: both sources, filtered',
+    news.enabled && news.items.length === 7 && news.items.some((i) => i.lang === 'EN') && !/Bomaanslag|killed/.test(headlines), headlines);
   r = await get('/manifest.webmanifest');
   check(results, 'app manifest served', r.status === 200 && (await r.json()).short_name === 'Whatsup', r.status);
 
