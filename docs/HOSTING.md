@@ -59,10 +59,21 @@ If you open it now, it shows a sign-in page saying setup isn't finished. That's 
    - **Authorized redirect URIs → Add URI:** your Cloudflare address plus `/auth/callback`, for example
      `https://whatsup.<your-name>.workers.dev/auth/callback`
    - **Create.** Copy the **Client ID** and the **Client secret** now. Google shows the secret only once.
-7. **Publish it, so you don't get signed out every week:** Google Auth Platform → **Audience** → **Publish app** → Confirm.
+7. **Fill in Branding**, so Google lets you publish: Google Auth Platform → **Branding**.
+   - **App home page:** `https://whatsup.<your-name>.workers.dev/about.html`
+   - **App privacy policy link:** `https://whatsup.<your-name>.workers.dev/privacy.html`
+   - **App terms of service link:** `https://whatsup.<your-name>.workers.dev/terms.html`
+   - **Authorized domains → Add domain:** `<your-name>.workers.dev` (without `whatsup.` in front)
+   - **Developer contact information:** your Gmail
+   - **Leave the App logo empty.** Adding a logo makes Google insist on a full review.
+   - **Save.**
+8. **Publish it, so you don't get signed out every week:** Google Auth Platform → **Audience** → **Publish app** → Confirm.
    - While an app is in *Testing*, Google ends its sign-ins after 7 days.
    - Published is fine for a personal app. Unreviewed ("unverified") apps can have up to 100 users, plenty for a family.
 
+> **Can't publish yet?** You can still start: on **Audience → Test users → Add users**, add your Gmail (and your partner's).
+> Everything works, but you'll need to sign in again every 7 days until the app is published.
+>
 > When you sign in, Google will say **"Google hasn't verified this app"**. That's normal for a
 > personal app you made yourself. Click **Advanced → Go to Whatsup Family Dashboard**.
 > Google then lists exactly what the app asks for: your calendars (read-only) and your email address.

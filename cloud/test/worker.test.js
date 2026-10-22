@@ -245,6 +245,8 @@ test('config: allow-list required, defaults to all ticked calendars, problems re
 // ---------------------------------------------------------------- whole worker: sign-in flow
 
 const ASSET_PAGES = {
+  '/about.html': '<html><body>ABOUT</body></html>',
+  '/privacy.html': '<html><body>PRIVACY</body></html>',
   '/index.html': '<html><body>DASHBOARD</body></html>',
   '/signin.html': '<html><body>SIGN IN</body></html>',
   '/styles.css': 'body{}',
@@ -446,4 +448,14 @@ test('worker: only GET/HEAD (and POST /logout) allowed; /signin.html redirects t
   res = await worker.fetch(new Request(`${ORIGIN}/signin.html`), ENV);
   assert.equal(res.headers.get('Location'), '/');
   assert.equal(readCookie(new Request(ORIGIN, { headers: { Cookie: 'a=1; __Host-whatsup=xyz' } }), SESSION_COOKIE), 'xyz');
+});
+
+test('worker: home page and privacy policy are public (Google requires them), dashboard is not', async () => {
+  for (const p of ['/about.html', '/privacy.html']) {
+    const res = await worker.fetch(new Request(`${ORIGIN}${p}`), ENV);
+    assert.equal(res.status, 200, p);
+    assert.equal(await res.text(), ASSET_PAGES[p]);
+  }
+  const res = await worker.fetch(new Request(`${ORIGIN}/index.html`), ENV);
+  assert.equal(await res.text(), ASSET_PAGES['/signin.html']);
 });
