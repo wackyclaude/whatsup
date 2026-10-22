@@ -182,6 +182,7 @@ static/               the page, shared by both versions (+ sign-in page, manifes
 server/whatsup.py     local server: calendar + weather fetch, cache, JSON API (Python 3.9+, stdlib + 2 deps)
 server/configure.py   guided settings changes
 config/               example settings + festival list
+tools/make_moon.py    draws static/img/moon.png (real maria and crater positions)
 scripts/              install, configure, check, demo, open-app, uninstall
 tests/                python -m unittest discover tests  ·  TZ=Europe/Amsterdam node tests/test_sky.mjs
 ```

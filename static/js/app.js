@@ -175,7 +175,7 @@ function renderSky() {
   const mi = Sky.moonInfo(now, lat, lon);
   $('moon-evening').textContent = mi.upEvening ? 'Up this evening' : 'Not up this evening';
   $('moon-rashi').textContent = `In ${mi.rashi}`;
-  $('moon-lit').setAttribute('d', Sky.moonLitPath(mi.fraction, mi.waxing, 32, 32, 28));
+  $('moon-lit').setAttribute('d', Sky.moonLitPath(mi.fraction, mi.waxing, 50, 50, 48));
   const pct = Math.round(mi.fraction * 100);
   $('moon-phase').textContent = `${pct}% lit · ${mi.phaseName}`;
   $('moon-svg').setAttribute('aria-label', `Moon tonight: ${pct}% lit, ${mi.phaseName}`);
