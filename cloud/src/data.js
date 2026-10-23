@@ -1,15 +1,16 @@
 // Fetches and caches calendar + weather for /api/data.
 import { loadConfig } from './config.js';
 import { fetchCalendars, listVisibleCalendars, dayKeyIn, CalendarAuthError } from './google.js';
-import { fetchWeather } from './weather.js';
+import { fetchWeather, fetchWorldWeather } from './weather.js';
 import { accessTokenFor, dropAccessToken, SignInError } from './oauth.js';
 import { fetchNews } from './news.js';
 
-export const VERSION = '2.2.0';
+export const VERSION = '2.3.0';
 
 // Best-effort memory cache per Worker instance. The page keeps showing its
 // last good data if a refresh fails, so a cold cache is harmless.
 let weatherEntry = null;
+let worldEntry = null; // { key, ...entry } — key changes when the city list changes
 const calendarEntries = new Map(); // per signed-in person
 
 function safeMessage(e) {
@@ -39,7 +40,8 @@ export async function getData(env, session, now = new Date(), fetchImpl = fetch)
   const iso = (ms) => (ms ? new Date(ms).toISOString() : null);
   const creds = { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET };
 
-  const [wx, cal] = await Promise.all([
+  const worldKey = JSON.stringify(config.world_clocks.map((c) => [c.latitude, c.longitude]));
+  const [wx, cal, world] = await Promise.all([
     refresh(weatherEntry, config.refresh_minutes.weather, now, day, () => fetchWeather(config, now, fetchImpl))
       .then((e) => { weatherEntry = e; return e; }),
     refresh(calendarEntries.get(session.email), config.refresh_minutes.calendar, now, day, async () => {
@@ -64,6 +66,11 @@ export async function getData(env, session, now = new Date(), fetchImpl = fetch)
       calendarEntries.set(session.email, e);
       return e;
     }),
+    config.world_clocks.length
+      ? refresh(worldEntry && worldEntry.key === worldKey ? worldEntry : null, config.refresh_minutes.weather, now, day,
+        () => fetchWorldWeather(config.world_clocks, fetchImpl))
+        .then((e) => { worldEntry = { ...e, key: worldKey }; return e; })
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   return {
@@ -75,6 +82,7 @@ export async function getData(env, session, now = new Date(), fetchImpl = fetch)
     weather: wx.data,
     weather_updated: iso(wx.at),
     weather_error: wx.error,
+    world_weather: world.data,
     server_time: now.toISOString(),
   };
 }
@@ -85,6 +93,7 @@ export function forgetUser(email) {
 
 export function _resetDataCache() {
   weatherEntry = null;
+  worldEntry = null;
   calendarEntries.clear();
 }
 

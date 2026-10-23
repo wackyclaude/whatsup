@@ -130,6 +130,9 @@ In Cloudflare: your Worker → **Settings → Variables and Secrets → Add**:
   "cameras": [
     { "name": "Golden Temple", "place": "Amritsar", "youtube_video_id": "" }
   ],
+  "world_clocks": [
+    { "name": "New Delhi", "latitude": 28.6139, "longitude": 77.2090, "timezone": "Asia/Kolkata" }
+  ],
   "panchang": { "month_system": "purnimanta" },
   "camera_rotate_minutes": 10
 }
@@ -137,6 +140,7 @@ In Cloudflare: your Worker → **Settings → Variables and Secrets → Add**:
 
 - **Smallest working version:** `{ "allowed_emails": ["you@gmail.com"] }`. That shows all your ticked calendars, with Groningen weather.
 - **Events you mark Private** in Google always show as "Busy".
+- **Other cities** (`world_clocks`, up to 6): shown next to the date with their time and weather now. Find latitude/longitude by right-clicking the place in Google Maps; the timezone is a name like `America/New_York` ([list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)).
 - **Cameras:** open a live stream you trust on YouTube. The ID is the 11 characters after `v=` in the address. A camera with an empty ID is hidden.
 - **Wide screens** (wider than 16:10, e.g. a 16:9 monitor or TV) get an extra column on the left: *Tonight's sky* and *Kids' news*. The 16:10 MacBook screen keeps the normal layout.
   - Kids' news shows headlines (no photos) from NOS Jeugdjournaal and BBC Newsround, with a word filter on top. It updates every 30 minutes. Clicking a headline opens the article on that service's website in a new tab.

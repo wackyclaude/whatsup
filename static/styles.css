@@ -63,6 +63,15 @@ h2 { margin: 0; }
 .pill-blue { background: var(--blue); }
 .pill-saffron { background: var(--saffron); }
 .pill-green { background: var(--green); }
+.top-left { min-width: 0; }
+.world { display: flex; gap: 6px; padding-left: 20px; margin-left: 2px; border-left: 1px solid #2A3A4B; }
+.city { display: flex; flex-direction: column; gap: 2px; min-width: 104px; padding: 4px 10px; border-radius: 10px; background: rgba(241,244,248,0.04); }
+.city-name { font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.city-name .city-day { color: var(--lavender-light); margin-left: 4px; letter-spacing: 0.02em; }
+.city-row { display: flex; align-items: center; gap: 6px; }
+.city-time { font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+.city-temp { font-size: 15px; font-weight: 700; color: var(--soft); }
+.city .wx-icon { width: 18px; height: 18px; }
 .top-right { display: flex; align-items: center; gap: 12px; }
 .status { font-size: 13px; color: var(--muted); }
 .status.warn { color: var(--saffron-light); }
@@ -189,20 +198,12 @@ h2 { margin: 0; }
 .cam-frame, .cam-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .cam-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #8FA3B7; font-size: 14px; font-weight: 600; }
 .cam-empty svg { width: 56px; height: 56px; fill: none; stroke: var(--green); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-.cam-top { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: flex-start; pointer-events: none; }
-.cam-title { display: flex; align-items: center; gap: 8px; }
-.live { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 800; color: #fff; background: var(--red); border-radius: 4px; padding: 3px 7px; }
-.live i { width: 7px; height: 7px; border-radius: 50%; background: #fff; }
-.glass { font-size: 13px; font-weight: 700; color: var(--text); background: rgba(14,22,33,0.72); border-radius: 6px; padding: 3px 9px; }
-.glass:empty { display: none; }
-.cam-buttons { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
-.cam-buttons button {
-  height: 30px; padding: 0 12px; border-radius: 999px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
-  background: rgba(14,22,33,0.72); color: var(--text); border: 1px solid rgba(241,244,248,0.35);
-}
-.cam-buttons button[aria-pressed="true"] { background: var(--green); color: #0B2418; border-color: var(--green); }
-.cam-buttons button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-body.screensaver .cam-buttons { display: none; }
+/* The stream fades in only once it is playing, so YouTube's start-up title,
+   play button and logo never show; clicks pass through so hovering doesn't
+   bring them back. If it won't start by itself, it becomes clickable. */
+.cam-frame iframe { opacity: 0; transition: opacity 0.8s ease; pointer-events: none; }
+.cam-frame.showing iframe { opacity: 1; }
+.cam-frame.needs-click iframe { opacity: 1; pointer-events: auto; }
 
 /* ---------- sign out ---------- */
 .signout {

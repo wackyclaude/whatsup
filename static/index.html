@@ -55,6 +55,8 @@
           <span id="pill-festival" class="pill pill-green" hidden></span>
         </div>
       </div>
+      <!-- Other cities: local time + weather now -->
+      <div id="world" class="world" hidden></div>
     </div>
     <div class="top-right">
       <span id="demo-badge" class="badge-demo" hidden>Demo data</span>
@@ -212,21 +214,13 @@
       <div id="wx-next" class="wx-next"></div>
     </section>
 
-    <!-- Camera -->
-    <section class="cam" aria-label="Live camera from India">
+    <!-- Camera: just the picture, no overlays -->
+    <section id="cam" class="cam" aria-label="Live camera">
       <div id="cam-frame" class="cam-frame"></div>
       <div id="cam-empty" class="cam-empty" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2"/><path d="M15.5 10.5l6-3.5v10l-6-3.5z"/></svg>
         <div id="cam-empty-text"></div>
       </div>
-      <div class="cam-top">
-        <div class="cam-title">
-          <span id="cam-live" class="live" hidden><i></i>LIVE</span>
-          <span id="cam-name" class="glass"></span>
-        </div>
-        <span id="cam-time" class="glass"></span>
-      </div>
-      <div id="cam-buttons" class="cam-buttons"></div>
     </section>
   </div>
   </div>

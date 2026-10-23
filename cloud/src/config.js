@@ -102,6 +102,23 @@ export function loadConfig(raw) {
     });
   });
 
+  // Other cities shown at the top: local time + current weather
+  const world = [];
+  (Array.isArray(input.world_clocks) ? input.world_clocks : []).slice(0, 6).forEach((c, i) => {
+    const lat = Number(c && c.latitude);
+    const lon = Number(c && c.longitude);
+    const name = String((c && c.name) || '').trim().slice(0, 24);
+    if (!name || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+      problems.push(`world_clocks[${i}] needs a name, latitude and longitude`);
+      return;
+    }
+    if (!validTimeZone(c.timezone)) {
+      problems.push(`world_clocks[${i}] ("${name}") needs a valid timezone, like "America/New_York"`);
+      return;
+    }
+    world.push({ name, latitude: lat, longitude: lon, timezone: c.timezone });
+  });
+
   // Kids' news: only sources from the fixed list; "news": false turns it off
   const newsIn = input.news === undefined ? {} : input.news;
   const news = { enabled: newsIn !== false, sources: [...DEFAULT_SOURCES], block_words: [] };
@@ -129,6 +146,7 @@ export function loadConfig(raw) {
       hide_calendars: hideCalendars,
       busy_calendars: busyCalendars,
       cameras,
+      world_clocks: world,
       news,
       panchang: { month_system: system },
       camera_rotate_minutes: rotate,
@@ -150,6 +168,7 @@ export function publicSettings(config, festivals, problems, version, email) {
     panchang: config.panchang,
     cameras: config.cameras,
     camera_rotate_minutes: config.camera_rotate_minutes,
+    world_clocks: config.world_clocks.map((c) => ({ name: c.name, timezone: c.timezone })),
     news_enabled: config.news.enabled && config.news.sources.length > 0,
     festivals,
     problems,

@@ -78,6 +78,14 @@ async function fakeNetwork(input, init = {}) {
     const items = titles.map(([t, m], i) => `<item><title><![CDATA[${t}]]></title><link>${site}${i + 1}</link><pubDate>${ago(m)}</pubDate></item>`).join('');
     return new Response(`<?xml version="1.0"?><rss version="2.0"><channel>${items}</channel></rss>`, { headers: { 'Content-Type': 'application/rss+xml' } });
   }
+  if (url.hostname === 'api.open-meteo.com' && url.searchParams.has('current')) {
+    calls.world = (calls.world || 0) + 1;
+    const n = url.searchParams.get('latitude').split(',').length;
+    const sample = [[31, 0, 1], [9, 3, 0], [14, 1, 0], [7, 61, 0]]; // temp, code, is_day
+    return new Response(JSON.stringify(Array.from({ length: n }, (_, i) => ({
+      current: { temperature_2m: sample[i % 4][0], weather_code: sample[i % 4][1], is_day: sample[i % 4][2] },
+    }))));
+  }
   if (url.hostname === 'api.open-meteo.com') {
     calls.weather++;
     const times = [];
@@ -113,6 +121,12 @@ function envFor(baseEnv, overrides = {}) {
       location: { name: 'Groningen', latitude: 53.2194, longitude: 6.5665, timezone: tz },
       hide_calendars: ['Work'],   // calendars: left out = every ticked calendar
       cameras: [],
+      world_clocks: [
+        { name: 'New Delhi', latitude: 28.6139, longitude: 77.209, timezone: 'Asia/Kolkata' },
+        { name: 'New York', latitude: 40.7128, longitude: -74.006, timezone: 'America/New_York' },
+        { name: 'Sunnyvale', latitude: 37.3688, longitude: -122.0363, timezone: 'America/Los_Angeles' },
+        { name: 'Boston', latitude: 42.3601, longitude: -71.0589, timezone: 'America/New_York' },
+      ],
     }),
     ...overrides,
   };
@@ -164,6 +178,11 @@ async function selftest(baseEnv) {
   r = await get('/api/data', auth);
   const data = await r.json();
   check(results, 'calendar fetched', data.calendar_error === null && data.calendar, data.calendar_error);
+  check(results, 'city weather fetched in one request',
+    JSON.stringify(data.world_weather) === JSON.stringify([{ temp: 31, kind: 'sun' }, { temp: 9, kind: 'cloud' }, { temp: 14, kind: 'moon' }, { temp: 7, kind: 'rain' }]),
+    data.world_weather);
+  check(results, 'city list in settings without coordinates',
+    settings.world_clocks.length === 4 && settings.world_clocks[2].timezone === 'America/Los_Angeles' && !('latitude' in settings.world_clocks[0]), settings.world_clocks);
   check(results, 'weather fetched', data.weather_error === null && data.weather && data.weather.hours.length === 13, data.weather_error);
   const titles = data.calendar ? data.calendar.today.map((e) => e.title) : [];
   check(results, 'today events in order, private as Busy',

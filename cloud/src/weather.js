@@ -70,3 +70,30 @@ export async function fetchWeather(config, now, fetchImpl = fetch) {
   if (!res.ok) throw new Error(`weather HTTP ${res.status}`);
   return parseWeather(await res.json(), now, loc.timezone);
 }
+
+/**
+ * Current temperature and sky for several places in one request:
+ * [{ temp, kind }] in the same order (kind 'moon' for a clear night).
+ */
+export async function fetchWorldWeather(places, fetchImpl = fetch) {
+  if (!places.length) return [];
+  const qs = new URLSearchParams({
+    latitude: places.map((p) => p.latitude).join(','),
+    longitude: places.map((p) => p.longitude).join(','),
+    current: 'temperature_2m,weather_code,is_day',
+    timezone: 'UTC',
+  });
+  const res = await fetchImpl(`https://api.open-meteo.com/v1/forecast?${qs}`, {
+    headers: { 'User-Agent': 'whatsup-family-dashboard' },
+  });
+  if (!res.ok) throw new Error(`world weather HTTP ${res.status}`);
+  const body = await res.json();
+  const list = Array.isArray(body) ? body : [body]; // one place comes back as a single object
+  return places.map((_, i) => {
+    const cur = list[i] && list[i].current;
+    if (!cur || typeof cur.temperature_2m !== 'number') return null;
+    let kind = weatherKind(cur.weather_code);
+    if (cur.is_day === 0 && (kind === 'sun' || kind === 'partly')) kind = 'moon';
+    return { temp: Math.round(cur.temperature_2m), kind };
+  });
+}

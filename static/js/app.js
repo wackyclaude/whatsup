@@ -89,13 +89,13 @@ function fitStage() {
 function renderClock() {
   const now = new Date();
   $('clock').textContent = hm(now);
+  renderWorld(now);
   $('date').textContent = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
   if (state.dayKey !== dayKey(now)) {
     state.dayKey = dayKey(now);
     renderSky();
     renderCalendar();
   }
-  renderCamTime();
 }
 
 function renderStatus() {
@@ -385,6 +385,8 @@ function weatherIcon(kind) {
   if (kind === 'sun') {
     svg.append(svgEl('circle', { cx: 12, cy: 12, r: 4, stroke: '#FFB547' }),
       svgEl('path', { d: 'M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4', stroke: '#FFB547' }));
+  } else if (kind === 'moon') {
+    svg.append(svgEl('path', { d: 'M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z', stroke: '#D8CFFF' }));
   } else if (kind === 'partly') {
     svg.append(svgEl('circle', { cx: 8, cy: 8, r: 3, stroke: '#FFB547' }),
       svgEl('path', { d: 'M8 2.5v1M2.5 8h1M4.1 4.1l.7.7M11.9 4.1l-.7.7', stroke: '#FFB547' }),
@@ -479,70 +481,139 @@ const YT_VIDEO = /^[A-Za-z0-9_-]{11}$/;
 const YT_CHANNEL = /^UC[A-Za-z0-9_-]{22}$/;
 
 function camUrl(cam) {
-  const common = 'autoplay=1&mute=1&controls=0&rel=0&playsinline=1&modestbranding=1&iv_load_policy=3&disablekb=1';
+  const qs = new URLSearchParams({
+    autoplay: '1', mute: '1', controls: '0', rel: '0', playsinline: '1', modestbranding: '1',
+    iv_load_policy: '3', disablekb: '1', fs: '0', cc_load_policy: '0',
+    enablejsapi: '1', origin: location.origin, // lets the page tell the player to play
+  }).toString();
   if (cam.youtube_video_id && YT_VIDEO.test(cam.youtube_video_id)) {
-    return `https://www.youtube-nocookie.com/embed/${cam.youtube_video_id}?${common}`;
+    return `https://www.youtube-nocookie.com/embed/${cam.youtube_video_id}?${qs}`;
   }
   if (cam.youtube_channel_id && YT_CHANNEL.test(cam.youtube_channel_id)) {
-    return `https://www.youtube.com/embed/live_stream?channel=${cam.youtube_channel_id}&${common}`;
+    return `https://www.youtube.com/embed/live_stream?channel=${cam.youtube_channel_id}&${qs}`;
   }
   return null;
+}
+
+// Keeps the stream playing without showing any YouTube buttons. Talks to the
+// player with YouTube's documented postMessage commands (no extra script).
+const player = { iframe: null, origin: null, playing: false, tries: 0, timer: null, reveal: null };
+
+function playerSend(func, args = []) {
+  const w = player.iframe && player.iframe.contentWindow;
+  if (w) w.postMessage(JSON.stringify({ event: 'command', func, args }), player.origin);
+}
+
+function nudgePlayer() {
+  if (!player.iframe || player.playing) return;
+  player.tries += 1;
+  playerSend('mute');
+  playerSend('playVideo');
+  // Still not playing after ~20 s (e.g. the browser blocks autoplay):
+  // show the player so someone can press play once.
+  if (player.tries >= 5) $('cam-frame').classList.add('needs-click');
+}
+
+function onPlayerMessage(e) {
+  if (!player.iframe || e.source !== player.iframe.contentWindow || e.origin !== player.origin) return;
+  let msg;
+  try { msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch (err) { return; }
+  if (!msg || typeof msg !== 'object') return;
+  let st = null;
+  if (msg.event === 'onStateChange' && typeof msg.info === 'number') st = msg.info;
+  else if (msg.info && typeof msg.info === 'object' && typeof msg.info.playerState === 'number') st = msg.info.playerState;
+  if (st === null) return;
+  const frame = $('cam-frame');
+  if (st === 1) { // playing
+    if (!player.playing) {
+      player.playing = true;
+      player.tries = 0;
+      clearTimeout(player.reveal);
+      // YouTube shows the title for a few seconds when playback starts
+      player.reveal = setTimeout(() => { frame.classList.remove('needs-click'); frame.classList.add('showing'); }, 3500);
+    }
+  } else if (st !== 3) { // not buffering: paused, ended, cued or unstarted
+    player.playing = false;
+    setTimeout(nudgePlayer, 1000);
+  }
+}
+
+function startPlayer(iframe, url) {
+  clearInterval(player.timer);
+  clearTimeout(player.reveal);
+  Object.assign(player, { iframe, origin: new URL(url).origin, playing: false, tries: 0 });
+  const frame = $('cam-frame');
+  frame.classList.remove('showing', 'needs-click');
+  iframe.addEventListener('load', () => {
+    // ask the player to report its state, then make sure it plays
+    const w = iframe.contentWindow;
+    if (w) w.postMessage(JSON.stringify({ event: 'listening', id: 'whatsup-cam', channel: 'widget' }), player.origin);
+    nudgePlayer();
+  });
+  player.timer = setInterval(nudgePlayer, 4000);
 }
 
 function renderCamera() {
   const cams = (state.settings && state.settings.cameras) || [];
   const frame = $('cam-frame');
-  const buttons = clear($('cam-buttons'));
   if (!cams.length) {
     clear(frame);
     $('cam-empty').hidden = false;
     $('cam-empty-text').textContent = isCloud()
       ? 'Add a camera to WHATSUP_CONFIG in Cloudflare'
       : 'Add a camera: scripts/configure.sh add-camera';
-    $('cam-live').hidden = true;
-    $('cam-name').textContent = '';
     return;
   }
   $('cam-empty').hidden = true;
-  $('cam-live').hidden = false;
   state.camIndex = state.camIndex % cams.length;
   const cam = cams[state.camIndex];
   const url = camUrl(cam);
+  $('cam').setAttribute('aria-label', `Live camera: ${cam.name}`);
   if (url && state.camRendered !== url) {
     const iframe = document.createElement('iframe');
     iframe.src = url;
     iframe.title = `Live camera: ${cam.name}`;
-    iframe.allow = 'autoplay; encrypted-media; picture-in-picture';
+    iframe.allow = 'autoplay; encrypted-media';
     iframe.referrerPolicy = 'strict-origin-when-cross-origin';
     // no allow-popups / allow-top-navigation: the stream can't open other pages
-    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-presentation');
+    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+    iframe.tabIndex = -1;
     clear(frame).appendChild(iframe);
     state.camRendered = url;
-  }
-  $('cam-name').textContent = cam.place && cam.place !== cam.name ? `${cam.name}, ${cam.place}` : cam.name;
-  renderCamTime();
-
-  if (cams.length > 1) {
-    cams.forEach((c, i) => {
-      const b = el('button', null, c.name);
-      b.type = 'button';
-      b.setAttribute('aria-pressed', String(i === state.camIndex));
-      b.addEventListener('click', () => { state.camIndex = i; renderCamera(); });
-      buttons.appendChild(b);
-    });
+    startPlayer(iframe, url);
   }
 }
 
-function renderCamTime() {
-  const cams = (state.settings && state.settings.cameras) || [];
-  const cam = cams[state.camIndex % (cams.length || 1)];
-  if (!cam) { $('cam-time').textContent = ''; return; }
-  try {
-    const t = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: cam.timezone || 'Asia/Kolkata' });
-    $('cam-time').textContent = `${t} ${cam.timezone === 'Asia/Kolkata' || !cam.timezone ? 'IST' : ''}`.trim();
-  } catch (e) {
-    $('cam-time').textContent = '';
-  }
+// ------------------------------------------------------------ other cities
+
+function renderWorld(now = new Date()) {
+  const places = (state.settings && state.settings.world_clocks) || [];
+  const box = $('world');
+  box.hidden = places.length === 0;
+  if (!places.length) return;
+  const weather = (state.data && state.data.world_weather) || [];
+  const here = now.toLocaleDateString('en-GB', { weekday: 'short' });
+  clear(box);
+  places.forEach((p, i) => {
+    let time;
+    let day;
+    try {
+      time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: p.timezone });
+      day = now.toLocaleDateString('en-GB', { weekday: 'short', timeZone: p.timezone });
+    } catch (e) {
+      return;
+    }
+    const city = el('div', 'city');
+    const name = el('div', 'city-name', p.name);
+    if (day !== here) name.append(el('span', 'city-day', day)); // already tomorrow / still yesterday there
+    const row = el('div', 'city-row');
+    row.append(el('span', 'city-time', time));
+    const w = weather[i];
+    if (w && typeof w.temp === 'number') row.append(weatherIcon(w.kind), el('span', 'city-temp', `${w.temp}°`));
+    city.append(name, row);
+    city.title = `${p.name}: ${time}${w ? `, ${w.temp}°C` : ''}`;
+    box.append(city);
+  });
 }
 
 // ------------------------------------------------------------ tonight's sky
@@ -691,6 +762,7 @@ function setupSignOut() {
 function mergeData(prev, next) {
   if (!prev) return next;
   const out = { ...next };
+  if (!next.world_weather && prev.world_weather) out.world_weather = prev.world_weather;
   for (const kind of ['calendar', 'weather']) {
     if (!next[kind] && prev[kind]) {
       out[kind] = prev[kind];
@@ -709,11 +781,13 @@ async function loadData() {
   renderStatus();
   renderCalendar();
   renderWeather();
+  renderWorld();
 }
 
 async function start() {
   if (MODE === 'screensaver') document.body.classList.add('screensaver');
   setupSideToggle();
+  window.addEventListener('message', onPlayerMessage);
   fitStage();
   window.addEventListener('resize', fitStage);
 
@@ -741,7 +815,7 @@ async function start() {
   setInterval(renderNews, SKY_REFRESH_MS); // keeps "20 min ago" current
 
   const rotate = Number(state.settings.camera_rotate_minutes || 0);
-  if (MODE === 'screensaver' && rotate > 0 && state.settings.cameras.length > 1) {
+  if (rotate > 0 && state.settings.cameras.length > 1) {
     setInterval(() => { state.camIndex += 1; renderCamera(); }, rotate * 60 * 1000);
   }
 }
