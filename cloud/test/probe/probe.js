@@ -78,6 +78,10 @@ async function fakeNetwork(input, init = {}) {
     const items = titles.map(([t, m], i) => `<item><title><![CDATA[${t}]]></title><link>${site}${i + 1}</link><pubDate>${ago(m)}</pubDate></item>`).join('');
     return new Response(`<?xml version="1.0"?><rss version="2.0"><channel>${items}</channel></rss>`, { headers: { 'Content-Type': 'application/rss+xml' } });
   }
+  if (url.hostname === 'celestrak.org') {
+    calls.iss = (calls.iss || 0) + 1;
+    return new Response('ISS (ZARYA)\r\n1 25544U 98067A   19156.50900463  .00003075  00000-0  59442-4 0  9992\r\n2 25544  51.6433  59.2583 0008217  16.4489 347.6017 15.51174618173442\r\n');
+  }
   if (url.hostname === 'api.open-meteo.com' && url.searchParams.has('current')) {
     calls.world = (calls.world || 0) + 1;
     const n = url.searchParams.get('latitude').split(',').length;
@@ -100,6 +104,7 @@ async function fakeNetwork(input, init = {}) {
         wind_speed_10m: times.map((_, i) => 12 + hr(i) / 2.5),
         wind_direction_10m: times.map(() => 225),
         weather_code: times.map(() => 2),
+        cloud_cover: times.map((_, i) => (hr(i) >= 22 || hr(i) <= 3 ? 15 : 85)), // "Clear after 22:00"
       },
       daily: {
         time: [0, 1, 2, 3].map(dayStr), weather_code: [2, 61, 3, 1], temperature_2m_max: [13, 12, 11, 12],
@@ -199,6 +204,9 @@ async function selftest(baseEnv) {
   check(results, 'kids news: both sources, filtered',
     news.enabled && news.items.length === 7 && news.items.some((i) => i.lang === 'EN') && !/Bomaanslag|killed/.test(headlines)
     && news.items.every((i) => /^https:\/\/(jeugdjournaal\.nl|www\.bbc\.co\.uk)\//.test(i.link)), headlines);
+  r = await get('/api/iss', auth);
+  const iss = await r.json();
+  check(results, 'space station orbit data', Array.isArray(iss.tle) && iss.tle[0].startsWith('1 25544'), iss);
   r = await get('/manifest.webmanifest');
   check(results, 'app manifest served', r.status === 200 && (await r.json()).short_name === 'Whatsup', r.status);
 

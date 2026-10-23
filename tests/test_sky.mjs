@@ -92,24 +92,7 @@ assert.equal(`${hm(pw.start)}–${hm(pw.end)}`, '08:14–10:16');
 assert.equal(pw.start.getDate(), 23);
 console.log('right-now tests passed');
 
-// Tonight's sky from Groningen
-const t1 = Sky.tonightsSky(new Date(2026, 9, 22, 12), LAT, LON);
-assert.equal(hm(t1.evening), '19:22', 'an hour after sunset');
-assert.deepEqual(t1.planets.map((x) => `${x.name} ${x.when} ${x.dir}`),
-  ['Saturn evening east', 'Jupiter dawn south-east', 'Mars dawn south-east']);
-assert.equal(t1.meteors.name, 'Orionids');
-assert.ok(t1.meteors.brightMoon, 'nearly full moon on 21 Oct 2026');
-// next eclipses seen from here: 2 Aug 2027 partial solar (~1/3 of the sun), 12 Jan 2028 partial lunar
-assert.deepEqual(t1.eclipses.map((e) => `${e.kind} ${e.type} ${e.date.toISOString().slice(0, 10)}`),
-  ['solar partial 2027-08-02', 'lunar partial 2028-01-12']);
-// summer 2026: the deep partial solar eclipse at sunset on 12 Aug, partial lunar eclipse on 28 Aug
-const t2 = Sky.tonightsSky(new Date(2026, 7, 1, 12), LAT, LON);
-assert.equal(t2.eclipses[0].kind, 'solar');
-assert.ok(t2.eclipses[0].covered > 80);
-assert.equal(t2.eclipses[1].date.toISOString().slice(0, 10), '2026-08-28');
-// small hours: planets "now"; Geminids peak shows up a few days ahead
-const t3 = Sky.tonightsSky(new Date(2027, 1, 10, 3), LAT, LON);
-assert.ok(t3.planets.some((x) => x.name === 'Jupiter' && x.when === 'now'));
+// Meteor showers and eclipses (used for tonight's highlight)
 assert.equal(Sky.meteorShower(new Date(2026, 11, 10, 20)).name, 'Geminids');
 assert.equal(Sky.meteorShower(new Date(2026, 5, 1)), null);
-console.log('tonight\'s sky tests passed');
+console.log('meteor shower tests passed');

@@ -10,7 +10,7 @@
 // Only Google accounts listed in WHATSUP_CONFIG.allowed_emails can sign in.
 
 import { loadConfig, publicSettings } from './config.js';
-import { getData, getNews, forgetUser, VERSION } from './data.js';
+import { getData, getNews, getIss, forgetUser, VERSION } from './data.js';
 import { CalendarAuthError } from './google.js';
 import {
   buildAuthUrl, exchangeCode, rememberAccessToken, revoke, SignInError,
@@ -184,7 +184,11 @@ export default {
 
     const session = missing.length ? null : await currentSession(request, env, config);
 
-    if (path === '/api/news') {
+    if (path === '/api/iss') {
+    if (!session) return json({ signin: true }, 401);
+    return json(await getIss());
+  }
+  if (path === '/api/news') {
       if (!session) return json({ signin: true }, 401);
       return json(await getNews(env));
     }

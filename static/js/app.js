@@ -2,6 +2,8 @@
 // All text from calendars is inserted with textContent, never as HTML.
 
 import * as Sky from './sky.js';
+import * as Night from './night.js';
+import * as SkyIcons from './sky-icons.js';
 import { festivalsBetween, mergeFestivals } from './festivals.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -11,7 +13,7 @@ const DATA_REFRESH_MS = 2 * 60 * 1000;
 const SKY_REFRESH_MS = 5 * 60 * 1000;
 const NEWS_REFRESH_MS = 30 * 60 * 1000;
 
-const state = { sideCollapsed: readPref('whatsup-side-collapsed') === '1', settings: null, data: null, camIndex: 0, camRendered: null, dayKey: null, festivals: null, festivalsDay: null };
+const state = { tab: 'sky', skyOpen: null, iss: null, sideCollapsed: readPref('whatsup-side-collapsed') === '1', settings: null, data: null, camIndex: 0, camRendered: null, dayKey: null, festivals: null, festivalsDay: null };
 
 const $ = (id) => document.getElementById(id);
 
@@ -77,11 +79,16 @@ function fitStage() {
   stage.style.width = `${w}px`;
   const wasHidden = $('side').hidden;
   $('side').hidden = !wide;
-  if (wide && wasHidden && state.settings) loadNews(); // the side column just appeared
+
   const scale = Math.min(window.innerWidth / w, window.innerHeight / BASE_H);
   const left = (window.innerWidth - w * scale) / 2;
   const top = (window.innerHeight - BASE_H * scale) / 2;
   stage.style.transform = `translate(${left}px, ${top}px) scale(${scale})`;
+  if (wide && wasHidden && state.settings) { // the side column just appeared
+    renderTonight();
+    loadNews();
+    loadIss();
+  }
 }
 
 // ------------------------------------------------------------ clock & header
@@ -199,7 +206,7 @@ function renderSky() {
   const { latitude: lat, longitude: lon, name } = s.location;
   const now = new Date();
   $('pill-place').textContent = name;
-  renderTonight(now, lat, lon);
+  renderTonight(now);
 
   const sun = Sky.sunTimes(now, lat, lon);
   $('sun-rise').textContent = hm(sun.rise);
@@ -616,59 +623,196 @@ function renderWorld(now = new Date()) {
   });
 }
 
+// ------------------------------------------------------------ side column: Sky | News tabs
+
+const TAB_BACK_MS = 5 * 60 * 1000; // News goes back to Sky after 5 minutes
+const ROW_CLOSE_MS = 2 * 60 * 1000; // an open row closes itself after 2 minutes
+const ISS_REFRESH_MS = 6 * 60 * 60 * 1000;
+
+function selectTab(name) {
+  state.tab = name;
+  const sky = name === 'sky';
+  $('tab-sky').setAttribute('aria-selected', String(sky));
+  $('tab-news').setAttribute('aria-selected', String(!sky));
+  $('panel-sky').hidden = !sky;
+  $('panel-news').hidden = sky;
+  clearTimeout(state.tabTimer);
+  if (sky) renderTonight();
+  else {
+    renderNews();
+    state.tabTimer = setTimeout(() => selectTab('sky'), TAB_BACK_MS);
+  }
+}
+
+function setupTabs() {
+  $('tab-sky').addEventListener('click', () => selectTab('sky'));
+  $('tab-news').addEventListener('click', () => selectTab('news'));
+  // someone reading the news: keep it open a little longer
+  $('panel-news').addEventListener('pointerdown', () => {
+    clearTimeout(state.tabTimer);
+    state.tabTimer = setTimeout(() => selectTab('sky'), TAB_BACK_MS);
+  });
+  // left/right arrows move between tabs
+  $('side-tabs').addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    if ($('tab-news').hidden) return;
+    const next = state.tab === 'sky' ? 'news' : 'sky';
+    selectTab(next);
+    $(`tab-${next}`).focus();
+  });
+}
+
 // ------------------------------------------------------------ tonight's sky
 
-const PLANET_COLOURS = { Mercury: '#C9D3DC', Venus: '#FFF4D6', Mars: '#FF8A65', Jupiter: '#FFE0A8', Saturn: '#F3D58A' };
-const NIGHT_GROUPS = { now: 'Up right now', evening: 'This evening', dawn: 'Before sunrise' };
-const ECLIPSE_NAMES = {
-  partial: 'Partial', total: 'Total', annular: 'Annular',
-};
+function skyRow(r) {
+  const row = el('div', 'srow');
+  row.dataset.key = r.key;
+  const head = el('button', 'srow-head');
+  head.type = 'button';
+  head.setAttribute('aria-expanded', 'false');
+  head.setAttribute('aria-label', `${r.name}: best at ${r.chip}, look ${r.compass}, ${Night.heightWords(r.alt)}`);
+  const icon = r.kind === 'constellation' ? SkyIcons.patternIcon(r.icon) : SkyIcons.bodyIcon(r.key);
+  const chip = el('span', r.morning ? 'srow-chip am' : 'srow-chip', r.chip);
+  const dir = el('span', 'srow-dir', r.compass);
+  dir.append(SkyIcons.heightDial(r.alt));
+  const chev = svgEl('svg', { viewBox: '0 0 24 24', class: 'srow-chev', 'aria-hidden': 'true' }, [svgEl('path', { d: 'M9 6l6 6-6 6' })]);
+  head.append(icon, el('span', 'srow-name', r.name), chip, dir, chev);
 
-function renderTonight(now, lat, lon) {
+  const body = el('div', 'srow-body');
+  body.hidden = true;
+  const grid = el('dl', 'srow-grid');
+  for (const [k, v] of r.details) grid.append(el('dt', null, k), el('dd', null, v));
+  const fact = el('div', 'srow-fact');
+  fact.append(el('b', null, 'Did you know?'), document.createTextNode(` ${r.fact}`));
+  body.append(grid, fact);
+  row.append(head, body);
+  head.addEventListener('click', () => {
+    state.skyOpen = state.skyOpen === r.key ? null : r.key;
+    clearTimeout(state.skyOpenTimer);
+    if (state.skyOpen) state.skyOpenTimer = setTimeout(() => { state.skyOpen = null; renderTonight(); }, ROW_CLOSE_MS);
+    renderTonight();
+  });
+  if (state.skyOpen === r.key) {
+    row.classList.add('open');
+    body.hidden = false;
+    head.setAttribute('aria-expanded', 'true');
+  }
+  return row;
+}
+
+function group(title, right) {
+  const g = el('div', 'sgroup');
+  g.append(el('span', null, title), el('span', null, right || ''));
+  return g;
+}
+
+function renderTonight(now = new Date()) {
+  const s = state.settings;
+  if (!s || $('side').hidden || state.tab !== 'sky') return;
+  const { latitude: lat, longitude: lon } = s.location;
   let t;
   try {
-    t = Sky.tonightsSky(now, lat, lon);
+    const clouds = state.data && state.data.weather && state.data.weather.clouds;
+    t = Night.skyTonight(now, lat, lon, { tle: state.iss, clouds });
   } catch (e) {
     return;
   }
-  $('night-when').textContent = t.evening && t.evening > now ? `from ${hm(t.evening)}` : '';
-  const list = clear($('night-list'));
-  let group = null;
-  for (const p of t.planets) {
-    if (p.when !== group) {
-      group = p.when;
-      list.append(el('li', 'night-group', group === 'dawn' ? `${NIGHT_GROUPS.dawn} · ${hm(t.dawn)}` : NIGHT_GROUPS[group]));
-    }
-    const li = el('li', 'night-item');
-    const dot = el('span', 'night-dot');
-    dot.style.color = PLANET_COLOURS[p.name];
-    const text = el('div', 'night-text');
-    text.append(el('span', 'night-name', p.name), el('span', 'night-meta', `Look ${p.dir}, ${p.alt < 20 ? 'low' : p.alt < 50 ? 'half way up' : 'high up'} · ${p.bright}`));
-    li.append(dot, text);
-    list.append(li);
+  // space background, drawn once per panel size
+  const panel = $('panel-sky');
+  const size = `${panel.clientWidth}x${panel.clientHeight}`;
+  if (state.spaceSize !== size && panel.clientWidth > 0) {
+    state.spaceSize = size;
+    clear($('space')).append(SkyIcons.spaceBackground(panel.clientWidth, panel.clientHeight));
   }
-  if (!t.planets.length) list.append(el('li', 'empty', 'No bright planets tonight. Look for the Moon and stars!'));
 
-  const extra = clear($('night-extra'));
-  if (t.meteors) {
-    const m = t.meteors;
-    const when = m.days < 0 ? 'peaked ' + (m.days === -1 ? 'last night' : `${-m.days} nights ago`)
-      : m.days === 0 ? 'peaks tonight' : m.days === 1 ? 'peaks tomorrow night' : `peaks ${longDay(m.peak)}`;
-    const div = el('div', 'night-event');
-    div.append(el('b', '', `☄ ${m.name} meteor shower`), document.createTextNode(` ${when}, up to ${m.perHour} an hour in a dark spot.`));
-    if (m.brightMoon) div.append(el('span', 'note', 'The bright Moon will hide the fainter ones.'));
-    extra.append(div);
+  // clouds + highlight
+  $('sky-cloud').hidden = !t.cloud;
+  if (t.cloud) {
+    $('sky-cloud-text').textContent = t.cloud.text;
+    $('sky-cloud-sub').textContent = `· ${t.cloud.sub}`;
   }
-  for (const e of t.eclipses) {
-    const div = el('div', 'night-event');
-    const date = e.date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-    if (e.kind === 'lunar') {
-      div.append(el('b', '', `🌘 ${ECLIPSE_NAMES[e.type] || ''} lunar eclipse`), document.createTextNode(` · ${date}, ${hm(e.date)}`));
-    } else {
-      div.append(el('b', '', `🌞 ${ECLIPSE_NAMES[e.type] || ''} solar eclipse`), document.createTextNode(` · ${date}, ${hm(e.date)} · ${e.covered}% of the Sun covered`));
-      div.append(el('span', 'note', 'Never look at the Sun without eclipse glasses.'));
+  const hl = t.highlight;
+  clear($('sky-hl-icon'));
+  const hlText = clear($('sky-hl-text'));
+  if (hl) {
+    $('sky-hl-icon').append(SkyIcons.highlightIcon(hl));
+    hlText.append(el('b', null, 'Highlight: '), document.createTextNode(hl.text));
+  } else if (t.times.look) {
+    $('sky-hl-icon').append(SkyIcons.bodyIcon('Moon', 30));
+    hlText.append(el('b', null, 'Tonight: '), document.createTextNode(`look up from ${hm(t.times.look)}`));
+  }
+
+  // rows (keep keyboard focus on the same row across re-renders)
+  const focused = document.activeElement && document.activeElement.closest && document.activeElement.closest('.srow');
+  const focusKey = focused ? focused.dataset.key : null;
+  const list = clear($('sky-list'));
+  list.classList.toggle('cloudy', !!(t.cloud && !t.cloud.good));
+  const keys = [...t.planets, ...t.constellations].map((r) => r.key);
+  if (state.skyOpen && !keys.includes(state.skyOpen)) state.skyOpen = null;
+  if (t.planets.length) {
+    list.append(group(t.planets.some((r) => r.kind === 'iss') ? 'Planets & Space Station' : 'Planets', 'best time · where'));
+    for (const r of t.planets) list.append(skyRow(r));
+  }
+  const consRows = t.constellations.map(skyRow);
+  if (consRows.length) {
+    list.append(group('Constellations', '19:00 – 24:00'));
+    for (const r of consRows) list.append(r);
+  }
+  if (!t.planets.length && !consRows.length) list.append(el('div', 'sky-empty', 'Light summer nights: not much to see until later in the year.'));
+
+  // fit: tuck the last constellations away (keep 4) behind "+ N more"
+  const openIdx = consRows.findIndex((r) => r.dataset.key === state.skyOpen);
+  const hidden = [];
+  while (list.scrollHeight > list.clientHeight + 1 && consRows.length - hidden.length > 4) {
+    let i = consRows.length - 1 - hidden.length;
+    if (i === openIdx) break;
+    consRows[i].hidden = true;
+    hidden.push(i);
+  }
+  if (hidden.length) {
+    const more = el('button', 'more-btn', `+ ${hidden.length} more constellation${hidden.length > 1 ? 's' : ''}`);
+    more.type = 'button';
+    more.addEventListener('click', () => { state.skyOpen = null; renderTonight(); });
+    list.append(more);
+    // the button itself may push one more row out
+    while (list.scrollHeight > list.clientHeight + 1 && consRows.length - hidden.length > 4) {
+      const i = consRows.length - 1 - hidden.length;
+      if (i === openIdx) break;
+      consRows[i].hidden = true;
+      hidden.push(i);
+      more.textContent = `+ ${hidden.length} more constellations`;
     }
-    extra.append(div);
+  }
+
+  if (focusKey) {
+    const again = list.querySelector(`.srow[data-key="${CSS.escape(focusKey)}"] .srow-head`);
+    if (again) again.focus();
+  }
+
+  // footnotes (only while nothing is open: room is tight then)
+  const foot = clear($('sky-foot'));
+  if (!state.skyOpen) {
+    if (t.planets.some((r) => r.morning)) {
+      const line = el('span');
+      line.append(el('b', null, 'Amber'), document.createTextNode(' time = tomorrow morning · the dot shows how high to look'));
+      foot.append(line);
+    } else {
+      foot.append(el('span', null, 'The dot shows how high to look'));
+    }
+    if (t.brightMoon) foot.append(el('span', null, 'Bright Moon tonight: only the brightest stars show'));
+  }
+}
+
+async function loadIss() {
+  if (!isCloud() || $('side').hidden) return;
+  if (state.issAt && Date.now() - state.issAt < ISS_REFRESH_MS) return;
+  try {
+    const r = await getJSON('/api/iss');
+    state.iss = Array.isArray(r.tle) && r.tle.length === 2 ? r.tle : null;
+    state.issAt = Date.now();
+    renderTonight();
+  } catch (e) {
+    // no passes shown; try again next time
   }
 }
 
@@ -683,14 +827,19 @@ function timeAgo(iso, now) {
   return days === 1 ? 'yesterday' : `${days} days ago`;
 }
 
+function newsAvailable() {
+  return isCloud() && state.settings.news_enabled !== false;
+}
+
 function renderNews() {
+  $('tab-news').hidden = !newsAvailable();
+  if (!newsAvailable() && state.tab === 'news') { selectTab('sky'); return; }
+  if (state.tab !== 'news') return;
   const news = state.news;
-  const card = $('news-card');
-  if (!news || !news.enabled || !news.items) { card.hidden = true; return; }
-  card.hidden = false;
   const now = new Date();
   const list = clear($('news-list'));
-  for (const item of news.items) {
+  const items = (news && news.items) || [];
+  for (const item of items) {
     const li = el('li', 'news-item');
     const meta = el('div', 'news-meta');
     meta.append(el('span', item.lang === 'EN' ? 'chip en' : 'chip', item.lang), el('span', '', `${item.source} · ${timeAgo(item.published, now)}`));
@@ -706,16 +855,20 @@ function renderNews() {
     li.append(title, meta);
     list.append(li);
   }
-  if (!news.items.length) list.append(el('li', 'empty', 'No headlines right now.'));
-  $('news-updated').textContent = news.updated ? `updated ${hm(new Date(news.updated))}` : '';
-  $('news-foot').textContent = news.errors && news.errors.length
+  if (!items.length) list.append(el('li', 'empty', news ? 'No headlines right now.' : 'Loading headlines…'));
+  // drop headlines that would be cut off at the bottom
+  const bottom = list.getBoundingClientRect().bottom;
+  for (const li of [...list.children].reverse()) {
+    if (li.getBoundingClientRect().bottom > bottom + 1 && list.children.length > 1) li.remove();
+  }
+  $('news-updated').textContent = news && news.updated ? `updated ${hm(new Date(news.updated))}` : '';
+  $('news-foot').textContent = news && news.errors && news.errors.length
     ? `Not reachable just now: ${news.errors.map((x) => x.replace(/: unavailable$/, '')).join(', ')}`
     : 'From children’s news services, checked every 30 minutes. Click a headline to read it.';
 }
 
 async function loadNews() {
-  if (!isCloud() || state.settings.news_enabled === false) { renderNews(); return; }
-  if ($('side').hidden) return; // nothing to show it in on this screen
+  if (!newsAvailable() || $('side').hidden) { renderNews(); return; }
   try {
     const next = await getJSON('/api/news');
     // keep the last good headlines if every source failed this time
@@ -782,11 +935,13 @@ async function loadData() {
   renderCalendar();
   renderWeather();
   renderWorld();
+  renderTonight(); // clouds come with the weather
 }
 
 async function start() {
   if (MODE === 'screensaver') document.body.classList.add('screensaver');
   setupSideToggle();
+  setupTabs();
   window.addEventListener('message', onPlayerMessage);
   fitStage();
   window.addEventListener('resize', fitStage);
@@ -811,7 +966,9 @@ async function start() {
   setInterval(loadData, DATA_REFRESH_MS);
   setInterval(renderSky, SKY_REFRESH_MS);
   loadNews();
+  loadIss();
   setInterval(loadNews, NEWS_REFRESH_MS);
+  setInterval(loadIss, 30 * 60 * 1000); // fetches only when the data is 6 h old
   setInterval(renderNews, SKY_REFRESH_MS); // keeps "20 min ago" current
 
   const rotate = Number(state.settings.camera_rotate_minutes || 0);

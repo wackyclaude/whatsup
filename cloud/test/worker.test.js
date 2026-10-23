@@ -225,6 +225,11 @@ test('weather parsing', () => {
   assert.equal(wx.hours[0].time, '2026-10-22T07:00');
   assert.deepEqual([wx.today.max, wx.today.min], [13, 8]);
   assert.equal(weatherKind(0), 'sun');
+  assert.deepEqual(wx.clouds, [], 'no cloud data in this reply');
+  data.hourly.cloud_cover = times.map((_, i) => (i % 24 >= 20 ? 12.4 : 90));
+  const withClouds = parseWeather(data, new Date('2026-10-22T05:42:00Z'), 'Europe/Amsterdam');
+  assert.equal(withClouds.clouds.length, 48 - 7);
+  assert.deepEqual(withClouds.clouds.find((c) => c.time === '2026-10-22T21:00'), { time: '2026-10-22T21:00', cloud: 12 });
 });
 
 test('config: allow-list required, defaults to all ticked calendars, problems reported not thrown', () => {

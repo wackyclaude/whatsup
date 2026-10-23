@@ -20,21 +20,49 @@
 
   <!-- Side column: only on wide screens (see fitStage in js/app.js) -->
   <aside id="side" class="side" hidden>
-    <section class="card card-night" aria-labelledby="night-h">
-      <div class="card-head">
-        <h2 id="night-h" class="label c-lavender">Tonight's sky</h2>
-        <span class="head-right">
-          <span id="night-when" class="note"></span>
-          <button id="side-close" class="side-toggle" type="button" title="Hide tonight's sky and kids' news" aria-label="Hide tonight's sky and kids' news">‹ Hide</button>
-        </span>
+    <div class="side-top">
+      <div id="side-tabs" class="tabs" role="tablist" aria-label="Side column">
+        <button id="tab-sky" class="tab tab-sky" type="button" role="tab" aria-selected="true" aria-controls="panel-sky">Sky</button>
+        <button id="tab-news" class="tab tab-news" type="button" role="tab" aria-selected="false" aria-controls="panel-news" hidden>News</button>
       </div>
-      <ul id="night-list" class="night-list"></ul>
-      <div id="night-extra" class="night-extra"></div>
+      <button id="side-close" class="side-hide" type="button" title="Hide" aria-label="Hide the side column">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16"/><path d="M15.5 10l-2 2 2 2"/></svg>
+      </button>
+    </div>
+
+    <!-- Sky: planets, Space Station and constellations (rows open for details) -->
+    <section id="panel-sky" class="panel panel-sky" role="tabpanel" aria-labelledby="tab-sky">
+      <div id="space" class="space-wrap"></div>
+      <div class="sky-inner">
+        <div class="sky-top">
+          <div class="sky-top-text">
+            <div id="sky-cloud" class="sky-cloud" hidden>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path class="moonline" d="M14.5 3.5a6 6 0 1 0 6 8 4.8 4.8 0 0 1-6-8z"/><path class="cloudline" d="M6 20h7a3 3 0 0 0 0-6 4 4 0 0 0-7.6 1.4A2.4 2.4 0 0 0 6 20z"/></svg>
+              <span><b id="sky-cloud-text"></b> <span id="sky-cloud-sub"></span></span>
+            </div>
+            <div id="sky-hl" class="sky-hl">
+              <span id="sky-hl-icon" class="sky-hl-icon"></span>
+              <div id="sky-hl-text" class="sky-hl-text"></div>
+            </div>
+          </div>
+          <svg class="compass" viewBox="0 0 44 44" role="img" aria-label="Compass: N north, E east, S south, W west. SE is between south and east.">
+            <circle cx="22" cy="22" r="13" class="ring"/>
+            <path d="M22 11 L25 22 L22 33 L19 22 Z" class="needle-back"/>
+            <path d="M22 11 L25 22 L19 22 Z" class="needle"/>
+            <path d="M22 22 L29.5 29.5" class="se"/>
+            <text x="22" y="7" class="n">N</text><text x="40" y="25">E</text><text x="22" y="43">S</text><text x="4" y="25">W</text>
+            <text x="36" y="38" class="se-t">SE</text>
+          </svg>
+        </div>
+        <div id="sky-list" class="sky-list"></div>
+        <div id="sky-foot" class="sky-foot"></div>
+      </div>
     </section>
 
-    <section id="news-card" class="card card-news" aria-labelledby="news-h" hidden>
+    <!-- News: kids' news headlines -->
+    <section id="panel-news" class="panel panel-news" role="tabpanel" aria-labelledby="tab-news" hidden>
       <div class="card-head">
-        <h2 id="news-h" class="label c-green">Kids' news</h2>
+        <h2 class="label c-green">Kids' news</h2>
         <span id="news-updated" class="note"></span>
       </div>
       <ul id="news-list" class="news-list"></ul>

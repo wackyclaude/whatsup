@@ -288,10 +288,9 @@ export function paranaWindow(ekadashiDay, lat, lon) {
   return { start, end: end > start ? end : null, day: nextDay };
 }
 
-// ---------------------------------------------------------------- tonight's sky
+// ---------------------------------------------------------------- meteor showers & eclipses
+// (used by night.js for tonight's highlight)
 
-const PLANETS = ['Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn'];
-const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 // Peak nights (month 1-12, day) of the yearly meteor showers worth staying up for.
 const METEOR_SHOWERS = [
   { name: 'Quadrantids', month: 1, day: 3, perHour: 80 },
@@ -303,62 +302,10 @@ const METEOR_SHOWERS = [
   { name: 'Geminids', month: 12, day: 14, perHour: 120 },
 ];
 
-const compass = (az) => COMPASS[Math.round(norm(az) / 45) % 8];
-
-function brightness(mag) {
-  if (mag < -3) return 'very bright';
-  if (mag < -1) return 'bright';
-  if (mag < 1) return 'easy to see';
-  return 'faint';
-}
-
 function skyPosition(body, date, observer) {
   const eq = Astronomy.Equator(body, date, observer, true, true);
   const hor = Astronomy.Horizon(date, observer, eq.ra, eq.dec, 'normal');
   return { alt: hor.altitude, az: hor.azimuth };
-}
-
-function planetsAt(date, observer, when) {
-  const sunAlt = skyPosition('Sun', date, observer).alt;
-  if (sunAlt > -6) return [];
-  const out = [];
-  for (const name of PLANETS) {
-    const { alt, az } = skyPosition(name, date, observer);
-    const mag = Astronomy.Illumination(name, date).mag;
-    if (alt < 8 || mag > 1.6) continue;
-    out.push({ name, when, alt: Math.round(alt), dir: compass(az), mag: Math.round(mag * 10) / 10, bright: brightness(mag) });
-  }
-  return out.sort((a, b) => a.mag - b.mag);
-}
-
-/**
- * What a family can see in the sky tonight from (lat, lon):
- * planets in the evening (an hour after sunset, or now if later) and
- * before dawn, a meteor shower near its peak, and upcoming eclipses
- * that are visible from here.
- */
-export function tonightsSky(now, lat, lon) {
-  const observer = new Astronomy.Observer(lat, lon, 0);
-  const today = sunTimes(now, lat, lon);
-  const tomorrow = sunTimes(addDays(now, 1), lat, lon);
-  let evening = null;
-  let dawn = null;
-  if (today.rise && now < today.rise) {
-    // small hours: the night has already started
-    evening = now;
-    dawn = new Date(today.rise.getTime() - 75 * 60000);
-  } else if (today.set && tomorrow.rise) {
-    const after = new Date(today.set.getTime() + 60 * 60000);
-    evening = now > after ? now : after;
-    dawn = new Date(tomorrow.rise.getTime() - 75 * 60000);
-  }
-  const planets = [];
-  if (evening) planets.push(...planetsAt(evening, observer, evening === now ? 'now' : 'evening'));
-  if (dawn) {
-    const seen = new Set(planets.map((p) => p.name));
-    planets.push(...planetsAt(dawn, observer, 'dawn').filter((p) => !seen.has(p.name)));
-  }
-  return { evening, dawn, planets, meteors: meteorShower(now), eclipses: eclipses(now, observer) };
 }
 
 /** A meteor shower whose peak is 2 days ago up to 10 days ahead, or null. */

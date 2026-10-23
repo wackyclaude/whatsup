@@ -50,7 +50,14 @@ export function parseWeather(data, now, timeZone) {
       kind: weatherKind(d.weather_code[i]),
     });
   }
-  return { hours, today: days[0] || null, next: days.slice(1, 3) };
+  // cloud cover for the coming nights (Tonight's sky); local-time keys
+  const clouds = [];
+  if (Array.isArray(h.cloud_cover)) {
+    for (let i = first; i < Math.min(first + 84, times.length); i++) {
+      if (typeof h.cloud_cover[i] === 'number') clouds.push({ time: times[i], cloud: Math.round(h.cloud_cover[i]) });
+    }
+  }
+  return { hours, today: days[0] || null, next: days.slice(1, 3), clouds };
 }
 
 export async function fetchWeather(config, now, fetchImpl = fetch) {
@@ -60,7 +67,7 @@ export async function fetchWeather(config, now, fetchImpl = fetch) {
     longitude: String(loc.longitude),
     timezone: loc.timezone,
     forecast_days: '4',
-    hourly: 'temperature_2m,precipitation_probability,precipitation,wind_speed_10m,wind_direction_10m,weather_code',
+    hourly: 'temperature_2m,precipitation_probability,precipitation,wind_speed_10m,wind_direction_10m,weather_code,cloud_cover',
     daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum',
     wind_speed_unit: 'kmh',
   });

@@ -135,7 +135,7 @@ async function fetchFeed(source, fetchImpl) {
  * Up to `limit` newest kid-safe headlines across the chosen sources,
  * making sure each working source gets a few.
  */
-export async function fetchNews(newsConfig, fetchImpl = fetch, limit = 9) {
+export async function fetchNews(newsConfig, fetchImpl = fetch, limit = 12) {
   const ids = newsConfig.sources.filter((id) => SOURCES[id]);
   const errors = [];
   const perSource = await Promise.all(ids.map(async (id) => {

@@ -4,8 +4,9 @@ import { fetchCalendars, listVisibleCalendars, dayKeyIn, CalendarAuthError } fro
 import { fetchWeather, fetchWorldWeather } from './weather.js';
 import { accessTokenFor, dropAccessToken, SignInError } from './oauth.js';
 import { fetchNews } from './news.js';
+import { fetchIssTle } from './iss.js';
 
-export const VERSION = '2.3.0';
+export const VERSION = '2.4.0';
 
 // Best-effort memory cache per Worker instance. The page keeps showing its
 // last good data if a refresh fails, so a cold cache is harmless.
@@ -117,4 +118,26 @@ export async function getNews(env, now = new Date(), fetchImpl = fetch) {
 
 export function _resetNewsCache() {
   newsEntry = null;
+}
+
+// Space Station orbit data: shared, refreshed every 6 hours (it changes slowly;
+// a day-old set is still good to a few seconds for tonight's passes).
+let issEntry = null;
+
+export async function getIss(now = new Date(), fetchImpl = fetch) {
+  const t = now.getTime();
+  if (!issEntry || t >= issEntry.next) {
+    try {
+      issEntry = { tle: await fetchIssTle(fetchImpl), at: t, next: t + 6 * 3600e3 };
+    } catch (e) {
+      // try again in 30 minutes; keep an older set for up to 3 days, then show no passes rather than wrong ones
+      const keep = issEntry && issEntry.tle && t - issEntry.at < 3 * 86400e3;
+      issEntry = keep ? { ...issEntry, next: t + 30 * 60e3 } : { tle: null, at: t, next: t + 30 * 60e3 };
+    }
+  }
+  return { tle: issEntry.tle, updated: issEntry.tle ? new Date(issEntry.at).toISOString() : null };
+}
+
+export function _resetIssCache() {
+  issEntry = null;
 }

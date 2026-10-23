@@ -7,7 +7,9 @@ A calm, kid-friendly screen for the family MacBook. It runs as a **screensaver**
 - **Panchang** — tithi, paksha, month, nakshatra, yoga, karana, Rahu Kaal, Abhijit, festivals
 - **Weather** — hour by hour (temperature, rain chance, wind), today's high/low, next 2 days
 - **India live camera** — streams you choose (e.g. Golden Temple, Amritsar)
-- **Wide screens only** (web app): *Tonight's sky* (planets, meteor showers, eclipses) and *Kids' news* headlines in an extra left column
+- **Wide screens only** (web app): an extra left column with two tabs
+  - **Sky** — planets, the Space Station and constellations to look for tonight (tap a row for when, where and a fun fact), tonight's highlight and a clear/cloudy forecast
+  - **News** — kids' news headlines
 
 ![Dashboard with sample data](docs/screenshot.png)
 
