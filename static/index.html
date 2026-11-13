@@ -98,7 +98,10 @@
     <section class="card card-cal tall" aria-labelledby="cal-h">
       <div class="card-head">
         <h2 id="cal-h" class="label c-blue">Calendar · Today</h2>
-        <div id="cal-allday" class="allday"></div>
+        <div id="cal-nav" class="cal-nav">
+          <button id="cal-prev" class="cal-btn" type="button" aria-label="Previous day" hidden>‹</button>
+          <button id="cal-next" class="cal-btn" type="button">Next day ›</button>
+        </div>
       </div>
       <ol id="cal-list" class="events"></ol>
       <div id="cal-empty" class="empty" hidden>Nothing planned today</div>

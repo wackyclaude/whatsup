@@ -10,7 +10,7 @@
 // Only Google accounts listed in WHATSUP_CONFIG.allowed_emails can sign in.
 
 import { loadConfig, publicSettings } from './config.js';
-import { getData, getNews, getIss, forgetUser, VERSION } from './data.js';
+import { getData, getDay, getNews, getIss, forgetUser, VERSION } from './data.js';
 import { CalendarAuthError } from './google.js';
 import {
   buildAuthUrl, exchangeCode, rememberAccessToken, revoke, SignInError,
@@ -191,6 +191,18 @@ export default {
   if (path === '/api/news') {
       if (!session) return json({ signin: true }, 401);
       return json(await getNews(env));
+    }
+    if (path === '/api/day') {
+      if (!session) return json({ signin: true }, 401);
+      try {
+        return json(await getDay(env, session, url.searchParams.get('offset')));
+      } catch (e) {
+        if (e instanceof SignInError || e instanceof CalendarAuthError) {
+          forgetUser(session.email);
+          return json({ signin: true, reason: 'expired' }, 401, { 'Set-Cookie': clearCookie(SESSION_COOKIE) });
+        }
+        throw e;
+      }
     }
     if (path === '/api/settings' || path === '/api/data') {
       if (!session) return json({ signin: true }, 401);

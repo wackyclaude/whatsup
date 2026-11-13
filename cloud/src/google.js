@@ -138,9 +138,10 @@ export async function listVisibleCalendars(config, token, fetchImpl = fetch) {
   return cals.slice(0, MAX_AUTO_CALENDARS);
 }
 
-export async function fetchCalendars(config, token, now, fetchImpl = fetch) {
+export async function fetchCalendars(config, token, now, fetchImpl = fetch, dayKey = null) {
   const tz = config.location.timezone;
-  const today = dayKeyIn(now, tz);
+  // dayKey: show that day (and the one after) instead of today
+  const today = dayKey || dayKeyIn(now, tz);
   const timeMin = midnightIn(today, tz).toISOString();
   const timeMax = midnightIn(addDaysKey(today, 2), tz).toISOString();
 

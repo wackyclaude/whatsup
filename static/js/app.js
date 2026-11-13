@@ -13,7 +13,7 @@ const DATA_REFRESH_MS = 2 * 60 * 1000;
 const SKY_REFRESH_MS = 5 * 60 * 1000;
 const NEWS_REFRESH_MS = 30 * 60 * 1000;
 
-const state = { tab: 'sky', skyOpen: null, iss: null, sideCollapsed: readPref('whatsup-side-collapsed') === '1', settings: null, data: null, camIndex: 0, camRendered: null, dayKey: null, festivals: null, festivalsDay: null };
+const state = { calOffset: 0, calDay: null, tab: 'sky', skyOpen: null, iss: null, sideCollapsed: readPref('whatsup-side-collapsed') === '1', settings: null, data: null, camIndex: 0, camRendered: null, dayKey: null, festivals: null, festivalsDay: null };
 
 const $ = (id) => document.getElementById(id);
 
@@ -133,22 +133,80 @@ function renderStatus() {
 
 // ------------------------------------------------------------ calendar
 
+const CAL_BACK_MS = 3 * 60 * 1000; // looking at another day: back to today after 3 minutes
+
+function eventItem(e, past) {
+  const li = el('li', 'event');
+  if (past) li.classList.add('past');
+  li.appendChild(el('div', e.all_day ? 'event-time allday-time' : 'event-time', e.all_day ? 'All day' : e.start_label));
+  const bar = el('div', 'event-bar');
+  bar.style.background = e.busy ? '#5B6B7B' : e.color;
+  li.appendChild(bar);
+  const text = el('div', 'event-text');
+  text.appendChild(el('div', 'event-title', e.title));
+  const meta = e.all_day ? (e.busy ? 'Private' : e.calendar)
+    : e.busy ? `Private · until ${e.end_label}` : `${e.calendar} · until ${e.end_label}`;
+  text.appendChild(el('div', 'event-meta', meta));
+  li.appendChild(text);
+  return li;
+}
+
+function calDayLabel(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  const date = new Date(y, m - 1, d, 12);
+  return state.calOffset === 1 ? 'Tomorrow' : date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
 function renderCalendar() {
   const d = state.data;
   const list = clear($('cal-list'));
   const foot = clear($('cal-foot'));
-  const allday = $('cal-allday');
-  allday.textContent = '';
+  const offset = state.calOffset || 0;
   $('cal-empty').hidden = true;
+  $('cal-nav').hidden = !isCloud() || !d || !d.calendars_configured;
+  $('cal-prev').hidden = offset === 0;
+  $('cal-prev').setAttribute('aria-label', offset === 1 ? 'Back to today' : 'Previous day');
+  $('cal-next').disabled = offset >= 60;
+  document.querySelector('.card-cal').classList.toggle('other-day', offset > 0);
   if (!d) return;
 
   if (!d.calendars_configured) {
+    $('cal-h').textContent = 'Calendar · Today';
     $('cal-empty').hidden = false;
     $('cal-empty').textContent = isCloud()
       ? 'Add a calendar to WHATSUP_CONFIG in Cloudflare'
       : 'Add a calendar: scripts/configure.sh add-calendar';
     return;
   }
+
+  // Another day (from "Next day")
+  if (offset > 0) {
+    const day = state.calDay;
+    if (!day || day.offset !== offset) {
+      $('cal-h').textContent = 'Calendar · …';
+      $('cal-empty').hidden = false;
+      $('cal-empty').textContent = state.calDayError ? 'Couldn’t load that day. Try again in a moment.' : 'Loading…';
+      return;
+    }
+    $('cal-h').textContent = `Calendar · ${calDayLabel(day.day)}`;
+    for (const e of day.events) list.appendChild(eventItem(e, false));
+    if (!day.events.length) {
+      $('cal-empty').hidden = false;
+      $('cal-empty').textContent = 'Nothing planned';
+    }
+    const next = (day.next || []).filter((e) => !e.all_day);
+    if (next.length) {
+      foot.append('The day after starts with ');
+      foot.appendChild(el('b', null, `${next[0].start_label} ${next[0].title}`));
+    } else {
+      foot.textContent = 'Nothing planned the day after (yet)';
+    }
+    if (day.errors && day.errors.length) foot.appendChild(el('div', null, 'Couldn’t update: ' + day.errors.join('; ')));
+    calScrollHint();
+    return;
+  }
+
+  $('cal-h').textContent = 'Calendar · Today';
   const cal = d.calendar;
   if (!cal) {
     $('cal-empty').hidden = false;
@@ -159,34 +217,34 @@ function renderCalendar() {
   // and it hasn't refreshed yet, wait rather than show yesterday.
   // "Today" in the dashboard's configured time zone (not the viewing device's)
   const tz = state.settings && state.settings.location && state.settings.location.timezone;
-  const keyInTz = (d) => (tz ? d.toLocaleDateString('en-CA', { timeZone: tz }) : dayKey(d));
+  const keyInTz = (x) => (tz ? x.toLocaleDateString('en-CA', { timeZone: tz }) : dayKey(x));
   const today = keyInTz(new Date());
   const events = cal.today.filter((e) => (e.all_day
     ? e.start <= today && today < e.end
     : keyInTz(new Date(new Date(e.end).getTime() - 1000)) >= today));
 
-  const allDay = events.filter((e) => e.all_day);
-  if (allDay.length) allday.textContent = 'All day · ' + allDay.map((e) => e.title).join(', ');
-
-  const timed = events.filter((e) => !e.all_day);
   const now = Date.now();
-  for (const e of timed.slice(0, 8)) {
-    const li = el('li', 'event');
-    if (new Date(e.end).getTime() < now) li.classList.add('past');
-    li.appendChild(el('div', 'event-time', e.start_label));
-    const bar = el('div', 'event-bar');
-    bar.style.background = e.busy ? '#5B6B7B' : e.color;
-    li.appendChild(bar);
-    const text = el('div', 'event-text');
-    text.appendChild(el('div', 'event-title', e.title));
-    const meta = e.busy ? `Private · until ${e.end_label}` : `${e.calendar} · until ${e.end_label}`;
-    text.appendChild(el('div', 'event-meta', meta));
-    li.appendChild(text);
+  // all-day first, then timed; the list scrolls when the day is full
+  for (const e of events.filter((x) => x.all_day)) list.appendChild(eventItem(e, false));
+  const timed = events.filter((e) => !e.all_day);
+  let firstUpcoming = null;
+  for (const e of timed) {
+    const past = new Date(e.end).getTime() < now;
+    const li = eventItem(e, past);
+    if (!past && !firstUpcoming) firstUpcoming = li;
     list.appendChild(li);
   }
-  if (timed.length > 8) list.appendChild(el('li', 'event-meta', `+ ${timed.length - 8} more`));
-  if (!timed.length && !allDay.length) $('cal-empty').hidden = false;
-  if (!timed.length && !allDay.length) $('cal-empty').textContent = 'Nothing planned today';
+  if (!events.length) {
+    $('cal-empty').hidden = false;
+    $('cal-empty').textContent = 'Nothing planned today';
+  }
+  // scroll so what's next is in view (unless someone is scrolling the list)
+  if (firstUpcoming && !state.calUserScrolled) {
+    const top = firstUpcoming.offsetTop - list.offsetTop;
+    const fits = top + firstUpcoming.offsetHeight <= list.clientHeight;
+    list.scrollTop = fits ? 0 : Math.max(0, top - 8);
+  }
+  calScrollHint();
 
   const tomorrow = (cal.tomorrow || []).filter((e) => !e.all_day);
   if (tomorrow.length) {
@@ -196,6 +254,42 @@ function renderCalendar() {
     foot.textContent = 'Nothing planned tomorrow (yet)';
   }
   if (cal.errors && cal.errors.length) foot.appendChild(el('div', null, 'Couldn’t update: ' + cal.errors.join('; ')));
+}
+
+async function showCalendarDay(offset) {
+  state.calOffset = Math.max(0, Math.min(60, offset));
+  state.calDayError = false;
+  state.calUserScrolled = false;
+  clearTimeout(state.calTimer);
+  if (state.calOffset > 0) state.calTimer = setTimeout(() => showCalendarDay(0), CAL_BACK_MS);
+  renderCalendar();
+  $('cal-list').scrollTop = 0;
+  if (state.calOffset === 0) return;
+  const want = state.calOffset;
+  try {
+    const day = await getJSON(`/api/day?offset=${want}`);
+    if (state.calOffset !== want) return; // clicked on meanwhile
+    state.calDay = day;
+  } catch (e) {
+    if (state.calOffset === want) state.calDayError = true;
+  }
+  renderCalendar();
+}
+
+// soft fade at the bottom while there's more to scroll to
+function calScrollHint() {
+  const l = $('cal-list');
+  l.classList.toggle('more-below', l.scrollTop + l.clientHeight < l.scrollHeight - 2);
+  l.classList.toggle('more-above', l.scrollTop > 2);
+}
+
+function setupCalendarNav() {
+  $('cal-list').addEventListener('scroll', calScrollHint, { passive: true });
+  $('cal-next').addEventListener('click', () => showCalendarDay((state.calOffset || 0) + 1));
+  $('cal-prev').addEventListener('click', () => showCalendarDay((state.calOffset || 0) - 1));
+  // someone scrolling the list: leave it where they put it for a while
+  $('cal-list').addEventListener('wheel', () => { state.calUserScrolled = true; clearTimeout(state.calScrollTimer); state.calScrollTimer = setTimeout(() => { state.calUserScrolled = false; }, CAL_BACK_MS); }, { passive: true });
+  $('cal-list').addEventListener('touchstart', () => { state.calUserScrolled = true; clearTimeout(state.calScrollTimer); state.calScrollTimer = setTimeout(() => { state.calUserScrolled = false; }, CAL_BACK_MS); }, { passive: true });
 }
 
 // ------------------------------------------------------------ sun, moon, panchang
@@ -942,6 +1036,7 @@ async function start() {
   if (MODE === 'screensaver') document.body.classList.add('screensaver');
   setupSideToggle();
   setupTabs();
+  setupCalendarNav();
   window.addEventListener('message', onPlayerMessage);
   fitStage();
   window.addEventListener('resize', fitStage);

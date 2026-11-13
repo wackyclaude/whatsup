@@ -1,6 +1,6 @@
 // Fetches and caches calendar + weather for /api/data.
 import { loadConfig } from './config.js';
-import { fetchCalendars, listVisibleCalendars, dayKeyIn, CalendarAuthError } from './google.js';
+import { fetchCalendars, listVisibleCalendars, dayKeyIn, addDaysKey, CalendarAuthError } from './google.js';
 import { fetchWeather, fetchWorldWeather } from './weather.js';
 import { accessTokenFor, dropAccessToken, SignInError } from './oauth.js';
 import { fetchNews } from './news.js';
@@ -34,6 +34,44 @@ async function refresh(entry, ttlMin, now, dayKey, loader) {
  * session = { email, rt } from the sign-in cookie.
  * Throws SignInError('expired') if Google no longer accepts the sign-in.
  */
+async function loadCalendars(config, session, creds, now, fetchImpl, dayKey = null) {
+  const load = async (token) => {
+    const cfg = config.calendar_mode === 'auto'
+      ? { ...config, calendars: await listVisibleCalendars(config, token, fetchImpl) }
+      : config;
+    return fetchCalendars(cfg, token, now, fetchImpl, dayKey);
+  };
+  const token = await accessTokenFor(session.rt, creds, fetchImpl, now.getTime());
+  try {
+    return await load(token);
+  } catch (e) {
+    if (!(e instanceof CalendarAuthError)) throw e;
+    // Google rejected the cached access token: get a fresh one once.
+    // If the sign-in itself was revoked, this throws SignInError('expired').
+    dropAccessToken(session.rt);
+    return load(await accessTokenFor(session.rt, creds, fetchImpl, now.getTime()));
+  }
+}
+
+// Other days (the calendar's "Next day" link), kept 5 minutes per person and day
+const dayEntries = new Map();
+export const MAX_DAYS_AHEAD = 60;
+
+export async function getDay(env, session, offset, now = new Date(), fetchImpl = fetch) {
+  const { config } = loadConfig(env.WHATSUP_CONFIG);
+  const n = Math.max(1, Math.min(MAX_DAYS_AHEAD, Math.trunc(Number(offset)) || 1));
+  const key = addDaysKey(dayKeyIn(now, config.location.timezone), n);
+  const cacheKey = `${session.email}|${key}`;
+  const hit = dayEntries.get(cacheKey);
+  if (hit && now.getTime() - hit.at < 5 * 60e3) return hit.data;
+  const creds = { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET };
+  const cal = await loadCalendars(config, session, creds, now, fetchImpl, key);
+  const data = { offset: n, day: key, events: cal.today, next: cal.tomorrow, errors: cal.errors };
+  if (dayEntries.size > 100) dayEntries.clear();
+  dayEntries.set(cacheKey, { at: now.getTime(), data });
+  return data;
+}
+
 export async function getData(env, session, now = new Date(), fetchImpl = fetch) {
   const { config } = loadConfig(env.WHATSUP_CONFIG);
   const tz = config.location.timezone;
@@ -45,24 +83,8 @@ export async function getData(env, session, now = new Date(), fetchImpl = fetch)
   const [wx, cal, world] = await Promise.all([
     refresh(weatherEntry, config.refresh_minutes.weather, now, day, () => fetchWeather(config, now, fetchImpl))
       .then((e) => { weatherEntry = e; return e; }),
-    refresh(calendarEntries.get(session.email), config.refresh_minutes.calendar, now, day, async () => {
-      const load = async (token) => {
-        const cfg = config.calendar_mode === 'auto'
-          ? { ...config, calendars: await listVisibleCalendars(config, token, fetchImpl) }
-          : config;
-        return fetchCalendars(cfg, token, now, fetchImpl);
-      };
-      const token = await accessTokenFor(session.rt, creds, fetchImpl, now.getTime());
-      try {
-        return await load(token);
-      } catch (e) {
-        if (!(e instanceof CalendarAuthError)) throw e;
-        // Google rejected the cached access token: get a fresh one once.
-        // If the sign-in itself was revoked, this throws SignInError('expired').
-        dropAccessToken(session.rt);
-        return load(await accessTokenFor(session.rt, creds, fetchImpl, now.getTime()));
-      }
-    }).then((e) => {
+    refresh(calendarEntries.get(session.email), config.refresh_minutes.calendar, now, day,
+      () => loadCalendars(config, session, creds, now, fetchImpl)).then((e) => {
       if (calendarEntries.size > 20) calendarEntries.clear();
       calendarEntries.set(session.email, e);
       return e;
@@ -90,12 +112,14 @@ export async function getData(env, session, now = new Date(), fetchImpl = fetch)
 
 export function forgetUser(email) {
   calendarEntries.delete(email);
+  for (const k of dayEntries.keys()) if (k.startsWith(`${email}|`)) dayEntries.delete(k);
 }
 
 export function _resetDataCache() {
   weatherEntry = null;
   worldEntry = null;
   calendarEntries.clear();
+  dayEntries.clear();
 }
 
 // Kids' news: shared by everyone, refreshed at most every 30 minutes.

@@ -167,6 +167,10 @@ test('fetchCalendars merges calendars, splits today/tomorrow, reports unknown ca
   assert.deepEqual(res.errors, ['Missing: not found in your Google account (check the calendar ID)']);
   assert.doesNotMatch(JSON.stringify(res), /group\.calendar\.google\.com/, 'calendar IDs never reach the page');
   await assert.rejects(fetchCalendars(config, 'bad-token', new Date(), fetchImpl), CalendarAuthError);
+  // another day ("Next day" link): that day becomes "today", the day after "tomorrow"
+  const fri = await fetchCalendars(config, 'tok', new Date('2026-10-22T05:42:00Z'), fetchImpl, '2026-10-23');
+  assert.deepEqual(fri.today.map((e) => e.title), ['School trip']);
+  assert.equal(fri.day, '2026-10-23');
 });
 
 test('auto mode: shows every ticked calendar except hidden ones, Busy where asked, no duplicates', async () => {
@@ -369,6 +373,15 @@ test('worker: full Google sign-in, dashboard, data, and sign-out', async () => {
   assert.equal(data.calendar.today[0].title, 'Swimming');
   assert.match(data.weather_error, /weather HTTP 503/);
   assert.equal(calls.filter((u) => u.endsWith('/token')).length, 1, 'access token from sign-in reused');
+
+  // a later day, for the "Next day" link: offset is clamped to 1..60
+  res = await withFetch(googleMock({ calls }), () => worker.fetch(new Request(`${ORIGIN}/api/day?offset=999`, { headers }), ENV));
+  const later = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(later.offset, 60);
+  assert.ok(Array.isArray(later.events) && Array.isArray(later.next));
+  res = await worker.fetch(new Request(`${ORIGIN}/api/day?offset=1`), ENV);
+  assert.equal(res.status, 401, 'needs sign-in');
 
   // sign-out from another site is refused
   res = await worker.fetch(new Request(`${ORIGIN}/logout`, { method: 'POST', headers: { ...headers, Origin: 'https://evil.example' } }), ENV);

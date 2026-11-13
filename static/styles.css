@@ -116,6 +116,20 @@ h2 { margin: 0; }
 /* ---------- calendar ---------- */
 .allday { font-size: 11px; color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
 .events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: hidden; }
+/* the calendar list scrolls when a day is full */
+.card-cal .events { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; scrollbar-width: thin; scrollbar-color: rgba(106,169,255,0.4) transparent; }
+.card-cal .events::-webkit-scrollbar { width: 6px; }
+.card-cal .events::-webkit-scrollbar-thumb { background: rgba(106,169,255,0.4); border-radius: 3px; }
+.card-cal .event { flex-shrink: 0; }
+.card-cal .events.more-below { -webkit-mask-image: linear-gradient(#000 calc(100% - 36px), transparent); mask-image: linear-gradient(#000 calc(100% - 36px), transparent); }
+.card-cal .events.more-above { -webkit-mask-image: linear-gradient(transparent, #000 28px); mask-image: linear-gradient(transparent, #000 28px); }
+.card-cal .events.more-above.more-below { -webkit-mask-image: linear-gradient(transparent, #000 28px, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(transparent, #000 28px, #000 calc(100% - 36px), transparent); }
+.event-time.allday-time { font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.cal-nav { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+.cal-btn { font: inherit; font-size: 11px; font-weight: 700; color: var(--blue); background: transparent; border: 1px solid rgba(106,169,255,0.35); border-radius: 999px; padding: 2px 10px; cursor: pointer; }
+.cal-btn:hover { background: rgba(106,169,255,0.12); }
+.cal-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.card-cal.other-day { border-top-color: var(--saffron-light); }
 .event { display: flex; gap: 10px; align-items: center; }
 .event.past { opacity: 0.45; }
 .event-time { width: 44px; flex-shrink: 0; font-size: 15px; font-weight: 700; }
