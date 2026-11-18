@@ -83,3 +83,9 @@ assert.match(row.compass, /^[NESW]{1,2}→[NESW]{1,2}$/);
 assert.equal(row.details.length, 4);
 assert.deepEqual(N.issPasses(['bad', 'tle'], new Date(), new Date(Date.now() + 3600e3), LAT, LON), []);
 console.log('night tests passed');
+
+// Between dawn twilight and sunrise the list moves on to tonight (it used to go empty)
+const early = N.skyTonight(new Date('2026-11-18T07:30:00+01:00'), LAT, LON);
+assert.ok(early.planets.length > 0);
+assert.equal(early.planets.find((p) => !p.morning).chip, '21:00');
+console.log('early-morning test passed');

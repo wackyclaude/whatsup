@@ -72,7 +72,9 @@ function farAway(au) {
 export function nightTimes(now, lat, lon) {
   const observer = new Astronomy.Observer(lat, lon, 0);
   const today = sunTimes(now, lat, lon);
-  const smallHours = today.rise && now < today.rise && now.getHours() < 12;
+  // Before dawn twilight it's still "last night"; from about an hour before
+  // sunrise the sky is too bright, so we look ahead to tonight instead.
+  const smallHours = today.rise && now < new Date(today.rise.getTime() - 105 * MIN) && now.getHours() < 12;
   const eveningDay = smallHours ? new Date(now.getTime() - DAY) : now;
   const set = sunTimes(eveningDay, lat, lon).set;
   let dark = null;
